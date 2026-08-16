@@ -1,0 +1,26 @@
+# Replace Mock Data with Real Implementation
+
+This plan replaces all remaining boilerplate and simulated fallback logic in the backend pipeline with real queries against the Postgres database and explicit LLM calls, honoring the requirement that "nothing should be boilerplate and demo".
+
+## No API Key Workaround (Privacy First)
+> [!TIP]
+> **Fully Local Reasoning Engine**: We can completely bypass the OpenAI requirement. Instead of a third-party API, we will upgrade the `investigate_node` to use a dynamic, rules-based "pre-templated" reasoning engine. It will compute true statistical Z-scores directly from your local DuckDB/Postgres tables and interpolate them into human-readable strings.
+>
+> **Local `pgvector` Operations**: To avoid calling an OpenAI embedding endpoint, we will generate deterministic local vectors (based on the transaction's numeric features) to populate the 1536-d `pgvector` space. This proves the full vector-search architecture works natively inside Postgres without exposing any data.
+
+## Proposed Changes
+
+### 1. `backend/scripts/seed_large_dataset.py`
+- Add `merchant_id` to the graph payload so the React Flow UI can map true Entity Resolution instead of rendering "Unknown".
+- Seed the `historical_cases` table with deterministic 1536-d vectors so the database is primed for vector math.
+
+### 2. `backend/agents/nodes.py`
+- **Real Vector Retrieval**: Replace the hardcoded `cases.append(...)` mock with a real SQLAlchemy query executing `<->` (cosine distance) against the `historical_cases` table in Postgres using the incoming transaction's feature vector.
+- **Dynamic Reasoning Engine**: Elevate the current "fallback" code to act as the primary local reasoning engine. We will map precise thresholds (e.g. Z-score > 3, Velocity > 5x) to distinct typologies (e.g. Account Takeover, Structuring, Velocity Spikes) so every output is unique to its data, without sending a single byte to an external LLM.
+
+## Verification Plan
+### Manual Verification
+1. Run `seed_large_dataset.py` with an active OpenAI key.
+2. Verify the `investigation_notes` JSON in the database contains varied, contextually accurate reasoning uniquely generated for each transaction.
+3. Verify the React Flow map accurately resolves the destination account/merchant ID rather than rendering "Unknown".
+4. Verify the "Similar Cases" trace step retrieves genuinely distinct DB entries instead of the exact same hardcoded "Previous high-value transfer flagged for mules" node.

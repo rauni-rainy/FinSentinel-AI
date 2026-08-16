@@ -1,0 +1,32 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "FinSentinel AI Backend"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "duckdb",
+    "pandas",
+    "openpyxl",
+    "python-multipart",
+    "sqlalchemy",
+    "alembic",
+    "psycopg2-binary",
+    "kaggle",
+    "pytest",
+    "httpx",
+    "python-dotenv",
+    "langgraph",
+    "langchain-openai",
+    "langchain-groq",
+    "langchain-core",
+    "langgraph-checkpoint-postgres",
+    "mmh3",
+    "bitarray",
+    "pgvector",
+    "scikit-learn",
+    "langchain-postgres",
+    "python-pptx"
+]
