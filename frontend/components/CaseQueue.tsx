@@ -11,6 +11,7 @@ export type PendingCase = {
   risk_score: number;
   summary: string;
   recommended_action: string;
+  escalated_at?: string;
 };
 
 interface CaseQueueProps {
@@ -68,6 +69,11 @@ export function CaseQueue({ cases, activeCaseId, onSelectCase }: CaseQueueProps)
                 </div>
                 <div className="flex justify-between items-center text-xs text-slate-400 font-mono mt-2">
                   <span>Conf: {(c.calibrated_confidence * 100).toFixed(1)}%</span>
+                  {c.escalated_at && (
+                    <span className="bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse">
+                      ESCALATED
+                    </span>
+                  )}
                 </div>
               </button>
             );

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { ShieldAlert, RefreshCw, ChevronLeft } from "lucide-react";
+import { ShieldAlert, RefreshCw, ChevronLeft, CreditCard, LayoutDashboard } from "lucide-react";
 
 export default function RedTeamPage() {
   const [data, setData] = useState<any>(null);
@@ -45,12 +46,26 @@ export default function RedTeamPage() {
         <p className="text-slate-500 max-w-md text-center mb-8">
           The Adversarial Red-Team Simulator hasn't generated any artifacts yet. Run the Python script or `make redteam` to execute the benchmark against the LLM, then refresh this page.
         </p>
-        <button 
-          onClick={fetchResults}
-          className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors flex items-center gap-2"
-        >
-          <RefreshCw className="w-4 h-4" /> Check for Artifact
-        </button>
+        <div className="flex gap-4">
+          <Link
+            href="/"
+            className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors flex items-center gap-2"
+          >
+            <LayoutDashboard className="w-4 h-4" /> Cockpit
+          </Link>
+          <Link
+            href="/credit-triage"
+            className="px-6 py-2 bg-blue-900/60 hover:bg-blue-800 text-blue-200 border border-blue-700 rounded transition-colors flex items-center gap-2"
+          >
+            <CreditCard className="w-4 h-4" /> Credit Triage
+          </Link>
+          <button 
+            onClick={fetchResults}
+            className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" /> Check for Artifact
+          </button>
+        </div>
       </div>
     );
   }
@@ -80,9 +95,15 @@ export default function RedTeamPage() {
         <header className="border-b border-slate-800 pb-6">
           <div className="flex justify-between items-end">
             <div>
-              <a href="/" className="inline-flex items-center gap-2 text-brand-blue hover:text-sky-300 mb-4 text-sm transition-colors">
-                <ChevronLeft className="w-4 h-4" /> Back to Triage Queue
-              </a>
+              <div className="flex items-center gap-4 mb-4 text-sm">
+                <Link href="/" className="inline-flex items-center gap-2 text-brand-blue hover:text-sky-300 transition-colors">
+                  <ChevronLeft className="w-4 h-4" /> Back to Triage Queue
+                </Link>
+                <span className="text-slate-700">|</span>
+                <Link href="/credit-triage" className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors">
+                  <CreditCard className="w-4 h-4" /> Credit Risk Triage
+                </Link>
+              </div>
               <h1 className="text-3xl font-bold text-slate-100 tracking-tight flex items-center gap-3">
                 <ShieldAlert className="text-brand-red w-8 h-8" /> Adversarial Evaluation Report
               </h1>

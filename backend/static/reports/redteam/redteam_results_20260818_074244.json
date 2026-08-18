@@ -1,0 +1,228 @@
+{
+  "metadata": {
+    "timestamp": "2026-08-18T07:38:49.073082Z",
+    "model": "phi4-mini",
+    "embeddings": "nomic-embed-text"
+  },
+  "scenarios": [
+    {
+      "id": "structuring",
+      "name": "Structuring / Smurfing",
+      "description": "Progressively splitting a $30k fraudulent transfer to evade fast-path rules.",
+      "variants": [
+        {
+          "variant_id": "V1",
+          "name": "Baseline (1x $30k)",
+          "inputs": {
+            "id": "V1",
+            "name": "Baseline (1x $30k)",
+            "amount": 30000.0,
+            "merchant_category": "electronics",
+            "merchant_id": "merch_bigbox",
+            "account_id": "rt_struct_01"
+          },
+          "risk_score": 0.95,
+          "calibrated_confidence": 0.9890130573694068,
+          "recommended_action": "DENY",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 147.5 indicates an extremely high deviation from the mean, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 31.2 implies rapid transactions occurring within a short period, which is atypical for normal business activities. The average similarity score of 0.89 and risk score of 0.95 further corroborate the unusual nature of this transaction.",
+            "similar_cases_context": "The retrieved similar cases include Structuring, which involves multiple rapid transactions just below reporting thresholds to retail categories; Normal variance, which is a recurring vendor payment clearing at month end; and Account Takeover (ATO), characterized by high velocity transfers to external merchants following an IP location change.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        },
+        {
+          "variant_id": "V2",
+          "name": "Basic Split (3x $10k)",
+          "inputs": {
+            "id": "V2",
+            "name": "Basic Split (3x $10k)",
+            "amount": 10000.0,
+            "merchant_category": "electronics",
+            "merchant_id": "merch_bigbox",
+            "account_id": "rt_struct_01"
+          },
+          "risk_score": 0.5,
+          "calibrated_confidence": 0.5,
+          "recommended_action": "REVIEW",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 47.5 indicates an extremely high deviation from the mean, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 11.2 implies rapid transactions occurring within a short period, which is atypical for normal business activities. The average similarity score of 0.89 and risk score of 0.5 indicate a high similarity to known suspicious patterns and a moderate risk level, respectively.",
+            "similar_cases_context": "The retrieved similar cases include Structuring, which involves multiple rapid transactions just below reporting thresholds to retail categories; Normal variance, which is a recurring vendor payment clearing at month end; and Account Takeover (ATO), characterized by high velocity transfers to external merchants following an IP location change.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        },
+        {
+          "variant_id": "V3",
+          "name": "Sub-Reporting (6x $5k)",
+          "inputs": {
+            "id": "V3",
+            "name": "Sub-Reporting (6x $5k)",
+            "amount": 5000.0,
+            "merchant_category": "electronics",
+            "merchant_id": "merch_bigbox",
+            "account_id": "rt_struct_01"
+          },
+          "risk_score": 0.4,
+          "calibrated_confidence": 0.26894142136999516,
+          "recommended_action": "REVIEW",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 22.5 indicates an extremely high deviation from the mean, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 6.2 implies rapid transactions occurring within a short period, which is atypical for normal business activities. The average similarity score of 0.89 suggests a high similarity to known suspicious patterns, and the risk score of 0.4 indicates a moderate level of risk.",
+            "similar_cases_context": "The retrieved similar cases include Structuring, which involves multiple rapid transactions just below reporting thresholds to retail categories; Normal variance, which is a recurring vendor payment clearing at month end; and Account Takeover (ATO), characterized by high velocity transfers to external merchants following an IP location change.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        },
+        {
+          "variant_id": "V4",
+          "name": "Micro-Structuring (15x $2k)",
+          "inputs": {
+            "id": "V4",
+            "name": "Micro-Structuring (15x $2k)",
+            "amount": 2000.0,
+            "merchant_category": "electronics",
+            "merchant_id": "merch_bigbox",
+            "account_id": "rt_struct_01"
+          },
+          "risk_score": 0.4,
+          "calibrated_confidence": 0.26894142136999516,
+          "recommended_action": "REVIEW",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 7.5 indicates a high deviation from the mean transaction amount, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 3.2 implies rapid movement of funds over a short period, which is atypical for normal transactions. The average similarity score of 0.89 suggests a strong resemblance to known suspicious patterns, while the risk score of 0.4 indicates a moderate level of suspicion.",
+            "similar_cases_context": "The retrieved similar cases include Structuring, which involves multiple rapid transactions just below reporting thresholds to retail categories; Normal variance, which is a recurring vendor payment clearing at month-end; and Account Takeover (ATO), characterized by high velocity transfers to external merchants following an IP location change.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        },
+        {
+          "variant_id": "V5",
+          "name": "Drip Fraud (30x $1k)",
+          "inputs": {
+            "id": "V5",
+            "name": "Drip Fraud (30x $1k)",
+            "amount": 1000.0,
+            "merchant_category": "electronics",
+            "merchant_id": "merch_bigbox",
+            "account_id": "rt_struct_01"
+          },
+          "risk_score": 0.4,
+          "calibrated_confidence": 0.26894142136999516,
+          "recommended_action": "REVIEW",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 2.5 indicates a significant deviation from the mean transaction amount, suggesting unusual activity. The velocity multiple of 7 days with a value of 2.2 implies rapid transactions occurring within a short period, which is atypical for normal business operations. The average similarity score of 0.89 suggests a high similarity to known suspicious cases, and the risk score of 0.4 indicates a moderate level of risk.",
+            "similar_cases_context": "The retrieved similar cases include Structuring, which involves multiple rapid transactions just below reporting thresholds to retail categories; Normal variance, which is a recurring vendor payment clearing at month end; and Account Takeover (ATO), characterized by high velocity transfers to external merchants following an IP location change.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic_id",
+      "name": "Synthetic Identity Evasion",
+      "description": "Progressively blending identity signals to evade historical vector matching.",
+      "variants": [
+        {
+          "variant_id": "V1",
+          "name": "Known Fraud ID",
+          "inputs": {
+            "id": "V1",
+            "name": "Known Fraud ID",
+            "amount": 15000.0,
+            "merchant_category": "crypto",
+            "merchant_id": "merch_crypto_1",
+            "account_id": "known_fraud_99",
+            "device_id": "dev_bad_123"
+          },
+          "risk_score": 0.75,
+          "calibrated_confidence": 0.9241418199787566,
+          "recommended_action": "ESCALATE",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 72.5 indicates an extremely high deviation from the mean, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 16.2 implies rapid movement of funds over a short period, which is atypical for normal transactions. The average similarity score of 0.89 and risk score of 0.75 further support the unusual nature of this transaction.",
+            "similar_cases_context": "The retrieved similar cases include a normal variance case involving a recurring vendor payment clearing at month end, an Account Takeover (ATO) case with high velocity transfers to external merchants following an IP location change, and a Structuring case with multiple rapid transactions just below reporting thresholds to retail categories.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        },
+        {
+          "variant_id": "V2",
+          "name": "Burner Device",
+          "inputs": {
+            "id": "V2",
+            "name": "Burner Device",
+            "amount": 15000.0,
+            "merchant_category": "crypto",
+            "merchant_id": "merch_crypto_1",
+            "account_id": "known_fraud_99",
+            "device_id": "dev_new_456"
+          },
+          "risk_score": 0.75,
+          "calibrated_confidence": 0.9241418199787566,
+          "recommended_action": "ESCALATE",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 72.5 indicates an extremely high deviation from the mean, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 16.2 implies rapid movement of funds over a short period, which is atypical for normal transactions. The average similarity score of 0.89 and risk score of 0.75 further support the unusual nature of this transaction.",
+            "similar_cases_context": "The retrieved similar cases include a normal variance case involving a recurring vendor payment clearing at month end, an Account Takeover (ATO) case with high velocity transfers to external merchants following an IP location change, and a Structuring case with multiple rapid transactions just below reporting thresholds to retail categories.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        },
+        {
+          "variant_id": "V3",
+          "name": "Mixed Account ID",
+          "inputs": {
+            "id": "V3",
+            "name": "Mixed Account ID",
+            "amount": 15000.0,
+            "merchant_category": "crypto",
+            "merchant_id": "merch_crypto_1",
+            "account_id": "syn_new_789",
+            "device_id": "dev_new_456"
+          },
+          "risk_score": 0.75,
+          "calibrated_confidence": 0.9241418199787566,
+          "recommended_action": "ESCALATE",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 72.5 indicates an extremely high deviation from the mean, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 16.2 implies rapid transactions occurring within a short period, which is atypical for normal business activities. The average similarity score of 0.89 and risk score of 0.75 further support the unusual nature of this transaction, warranting an escalation.",
+            "similar_cases_context": "The retrieved similar cases include Structuring, which involves multiple rapid transactions just below reporting thresholds to retail categories; Normal variance, which is a recurring vendor payment clearing at month end; and Account Takeover (ATO), characterized by high velocity transfers to external merchants following an IP location change.",
+            "typology_match": "Account Takeover (ATO)"
+          }
+        },
+        {
+          "variant_id": "V4",
+          "name": "Retail Wash",
+          "inputs": {
+            "id": "V4",
+            "name": "Retail Wash",
+            "amount": 15000.0,
+            "merchant_category": "retail",
+            "merchant_id": "merch_retail_1",
+            "account_id": "syn_new_789",
+            "device_id": "dev_new_456"
+          },
+          "risk_score": 0.75,
+          "calibrated_confidence": 0.9241418199787566,
+          "recommended_action": "ESCALATE",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of 72.5 indicates an extremely high deviation from the mean, suggesting an unusual transaction. The velocity multiple of 7 days with a value of 16.2 implies rapid transactions occurring within a short period, which is atypical for normal business activities. The average similarity score of 0.89 and risk score of 0.75 further corroborate the unusual nature of this transaction, warranting an escalation.",
+            "similar_cases_context": "The retrieved similar cases include Structuring, where multiple rapid transactions just below reporting thresholds to retail categories are observed. Another case is Account Takeover (ATO), characterized by high velocity transfers to external merchants following an IP location change. The third case is a Normal variance, involving recurring vendor payments clearing at the end of the month.",
+            "typology_match": "Structuring"
+          }
+        },
+        {
+          "variant_id": "V5",
+          "name": "Full Synthetic Wash",
+          "inputs": {
+            "id": "V5",
+            "name": "Full Synthetic Wash",
+            "amount": 250.0,
+            "merchant_category": "groceries",
+            "merchant_id": "merch_grocery",
+            "account_id": "syn_new_789",
+            "device_id": "dev_new_456"
+          },
+          "risk_score": 0.4,
+          "calibrated_confidence": 0.26894142136999516,
+          "recommended_action": "REVIEW",
+          "llm_reasoning": {
+            "signal_magnitude": "The Z-score of -1.25 indicates that the transaction amount is 1.25 standard deviations below the mean, suggesting it is not an outlier. The velocity multiple of 7 days with a value of 1.4 implies that the transaction is occurring at a rate that is 1.4 times the average velocity for similar transactions, which could be considered unusual but not necessarily indicative of fraud. The average similarity score of 0.89 suggests a high similarity to known patterns, but the risk score of 0.4 is relatively low, indicating a moderate level of suspicion. The recommended action is to review the transaction further.",
+            "similar_cases_context": "The retrieved similar cases consist of three instances. One case involves structuring, where multiple rapid transactions just below reporting thresholds are made to retail categories. Another case is a normal variance, where a recurring vendor payment is cleared at the end of the month. The third case is also a normal variance, with slightly elevated hardware spend that is within historical departmental limits.",
+            "typology_match": "Ambiguous"
+          }
+        }
+      ]
+    }
+  ]
+}

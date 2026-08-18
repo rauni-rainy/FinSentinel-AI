@@ -127,11 +127,26 @@ def calibrate_node(state: InvestigationState) -> InvestigationState:
     calibrated = calibrator.predict(raw_score)
     return {"calibrated_confidence": calibrated}
 
-def human_review_gate_node(state: InvestigationState) -> InvestigationState:
+from langchain_core.runnables import RunnableConfig
+
+def human_review_gate_node(state: InvestigationState, config: RunnableConfig) -> InvestigationState:
     conf = state.get("calibrated_confidence", 0.0)
     amt = float(state.get("transaction", {}).get("amount", 0.0))
     
     if (0.3 <= conf <= 0.8) or amt >= 10000.0:
+        import requests
+        import threading
+        
+        def trigger_webhook():
+            thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+            payload = {"thread_id": thread_id, "confidence": conf, "amount": amt}
+            try:
+                requests.post("http://localhost:8000/webhooks/interrupt", json=payload, timeout=2)
+            except Exception:
+                pass
+                
+        threading.Thread(target=trigger_webhook).start()
+        
         decision = interrupt({
             "summary": state.get("investigation_notes", ""),
             "confidence": conf,

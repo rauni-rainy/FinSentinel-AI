@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { ReactFlow, Background, Controls, Node, Edge, MarkerType } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ShieldCheck, ShieldAlert, AlertOctagon, Activity } from "lucide-react";
+import { TimeTravelReplay } from "./TimeTravelReplay";
 
 interface CaseDetailsProps {
   caseId: string;
@@ -65,6 +66,8 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleDecision]);
 
+  const [activeTab, setActiveTab] = useState<"trace" | "replay">("trace");
+
   if (loading || !data) {
     return (
       <div className="h-full w-full flex items-center justify-center text-slate-500 font-mono">
@@ -94,52 +97,33 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
     markerEnd: { type: MarkerType.ArrowClosed, color: "#475569" },
   }));
 
-  return (
-    <div className="flex flex-col h-full bg-slate-950 relative">
-      {/* Header */}
-      <div className="p-6 border-b border-slate-800 bg-slate-900/50 flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl font-bold font-mono tracking-tight text-slate-100">
-              Txn: {data.transaction?.transaction_id?.slice(0, 8)}
-            </h1>
-            <span className="px-2 py-1 bg-slate-800 text-slate-300 text-xs font-mono rounded">
-              {data.transaction?.merchant_category?.toUpperCase()}
-            </span>
-          </div>
-          <p className="text-slate-400 font-mono text-sm">Account: {data.transaction?.account_id}</p>
-        </div>
-        <div className="text-right">
-          <div className="text-3xl font-bold text-slate-100 font-mono">
-            ${(data.transaction?.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </div>
-          <div className="text-slate-400 text-sm font-mono mt-1">
-            Risk: {(data.risk_score * 100).toFixed(0)} | Conf: {(data.calibrated_confidence * 100).toFixed(1)}% | <span className="text-slate-300">AI suggests: </span><span className={`font-bold ${data.recommended_action === 'APPROVE' ? 'text-emerald-400' : data.recommended_action === 'DENY' ? 'text-rose-500' : 'text-amber-400'}`}>{data.recommended_action}</span>
-          </div>
-        </div>
+  const renderExecutionTrace = () => (
+    <div className="flex flex-col h-full overflow-y-auto bg-slate-900 border-r border-slate-800">
+      <div className="p-4 border-b border-slate-800 bg-slate-950 flex items-center gap-2">
+        <h3 className="text-sm font-bold tracking-widest text-slate-300 uppercase">Execution Trace</h3>
       </div>
-
-      {/* Main Content Split */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Timeline Evidence */}
-        <div className="w-1/3 border-r border-slate-800 p-6 overflow-y-auto bg-slate-950">
-          <h2 className="text-xs font-bold tracking-widest text-slate-500 uppercase mb-6">Execution Trace</h2>
-          
-          <div className="relative pl-4 border-l-2 border-slate-800 space-y-8">
-            <div className="relative">
-              <div className="absolute w-3 h-3 bg-brand-blue rounded-full -left-[23px] top-1"></div>
-              <p className="text-xs text-slate-500 font-mono mb-1">FAST SCREEN</p>
-              <p className="text-sm text-slate-300">Transaction isolated from ledger stream.</p>
+      <div className="p-6 relative">
+        <div className="absolute top-6 bottom-6 left-10 w-0.5 bg-slate-800"></div>
+        <div className="flex flex-col gap-8 relative z-10">
+          <div className="flex gap-4">
+            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)]"><Activity className="w-4 h-4" /></div>
+            <div className="pt-1">
+              <h4 className="font-mono text-sm text-slate-400">FAST SCREEN</h4>
+              <p className="text-slate-200 mt-1">Transaction isolated from ledger stream.</p>
             </div>
-            <div className="relative">
-              <div className="absolute w-3 h-3 bg-brand-blue rounded-full -left-[23px] top-1"></div>
-              <p className="text-xs text-slate-500 font-mono mb-1">SIMILAR CASES</p>
-              <p className="text-sm text-slate-300">Found {data.network?.nodes?.filter((n: any) => n.id.startsWith("case_")).length || 0} historical links via pgvector.</p>
+          </div>
+          <div className="flex gap-4">
+            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)]"><Activity className="w-4 h-4" /></div>
+            <div className="pt-1">
+              <h4 className="font-mono text-sm text-slate-400">SIMILAR CASES</h4>
+              <p className="text-slate-200 mt-1">Found {data.network?.nodes?.length - 3 || 0} historical links via pgvector.</p>
             </div>
-            <div className="relative">
-              <div className="absolute w-3 h-3 bg-brand-blue rounded-full -left-[23px] top-1"></div>
-              <p className="text-xs text-slate-500 font-mono mb-1">LLM REASONING</p>
-              <div className="bg-slate-900 border border-slate-800 rounded p-4 mt-2">
+          </div>
+          <div className="flex gap-4">
+            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)]"><Activity className="w-4 h-4" /></div>
+            <div className="pt-1 flex-1">
+              <h4 className="font-mono text-sm text-slate-400">LLM REASONING</h4>
+              <div className="mt-2 bg-slate-950 border border-slate-800 p-4 rounded text-sm text-slate-300 font-mono leading-relaxed">
                 {typeof data.summary === 'object' && data.summary !== null ? (
                   <div className="flex flex-col gap-2">
                     <div className="flex items-start gap-2">
@@ -156,20 +140,83 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-300 leading-relaxed">{String(data.summary)}</p>
+                  <p className="text-sm text-slate-300 leading-relaxed">{String(data.summary || "")}</p>
                 )}
               </div>
             </div>
-            <div className="relative">
-              <div className="absolute w-3 h-3 bg-amber-500 rounded-full -left-[23px] top-1 animate-pulse"></div>
-              <p className="text-xs text-amber-500 font-mono mb-1">INTERRUPT</p>
-              <p className="text-sm text-slate-300">Paused execution for human authorization.</p>
-            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col h-full bg-slate-950 relative">
+      {/* Header */}
+      <div className="p-6 border-b border-slate-800 bg-slate-900/50 flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-2xl font-bold font-mono tracking-wider text-slate-100 flex items-center gap-2">
+              Txn: {data.transaction?.transaction_id?.substring(0, 8)}
+            </h2>
+            <span className="px-2 py-0.5 text-xs font-mono border border-slate-600 rounded text-slate-400 uppercase">
+              {data.transaction?.transaction_type || 'TRANSFER'}
+            </span>
+            <div className="flex bg-slate-800 rounded overflow-hidden ml-4">
+              <button 
+                onClick={() => setActiveTab("trace")}
+                className={`px-3 py-1 font-mono text-xs transition-colors ${activeTab === 'trace' ? 'bg-brand-blue text-white' : 'text-slate-400 hover:bg-slate-700'}`}
+              >
+                Trace
+              </button>
+              <button 
+                onClick={() => setActiveTab("replay")}
+                className={`px-3 py-1 font-mono text-xs transition-colors ${activeTab === 'replay' ? 'bg-brand-blue text-white' : 'text-slate-400 hover:bg-slate-700'}`}
+              >
+                Time-Travel
+              </button>
             </div>
           </div>
+          <p className="text-slate-400 font-mono text-sm">Account: {data.transaction?.account_id}</p>
+        </div>
+        <div className="text-right flex flex-col items-end">
+          <div className="text-3xl font-mono font-bold text-white mb-2">
+            ${data.transaction?.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </div>
+          <div className="flex items-center gap-4 text-sm font-mono">
+            <span className="text-slate-400">Risk: <span className={data.risk_score > 0.7 ? "text-red-400 font-bold" : "text-slate-200"}>{Math.round(data.risk_score * 100)}</span></span>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-400">Conf: <span className="text-slate-200">{(data.calibrated_confidence * 100).toFixed(1)}%</span></span>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-400 flex items-center gap-2">
+              AI suggests: 
+              <span className={`font-bold flex items-center gap-1 ${
+                data.recommended_action === 'DENY' ? 'text-red-500' : 
+                data.recommended_action === 'ESCALATE' ? 'text-amber-500' : 'text-emerald-500'
+              }`}>
+                {data.recommended_action}
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-hidden flex">
+        {/* Left Col: Execution Trace or Replay */}
+        {activeTab === "trace" ? (
+          <div className="w-1/3 min-w-[320px] max-w-md">
+            {renderExecutionTrace()}
+          </div>
+        ) : (
+          <div className="w-1/3 min-w-[320px] max-w-md overflow-hidden border-r border-slate-800">
+            <TimeTravelReplay caseId={caseId} onForked={(newId) => {
+              onProcessed();
+            }} />
+          </div>
+        )}
 
         {/* Network Graph */}
-        <div className="w-2/3 relative bg-slate-950">
+        <div className="flex-1 relative bg-slate-950 border-l border-slate-800">
           <ReactFlow
             nodes={nodes.map(n => ({
               ...n,
@@ -185,6 +232,7 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
             }))}
             edges={edges}
             fitView 
+            fitViewOptions={{ maxZoom: 1.2, padding: 0.2 }}
             proOptions={{ hideAttribution: true }}
             colorMode="dark"
           >

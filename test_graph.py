@@ -8,7 +8,7 @@ workflow = build_investigation_graph()
 app = workflow.compile()
 
 initial_state = {
-    "transaction": {"amount": 6000},
+    "transaction": {"amount": 15000},
     "fast_screen_result": "AMBIGUOUS",
     "retrieved_similar_cases": [],
     "investigation_notes": "",

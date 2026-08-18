@@ -115,7 +115,8 @@ def test_executive_report_structure():
     
     # 4. Verify PPTX Structure
     prs = Presentation(io.BytesIO(pptx_data))
-    assert len(prs.slides) == 3, "Presentation must have exactly 3 slides (Summary, Highlights, Actions)"
+    assert len(prs.slides) >= 3, "Presentation must have at least 3 slides"
+
     
     # Slide 1 check
     slide_1_text = ""

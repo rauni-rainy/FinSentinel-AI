@@ -42,8 +42,16 @@ def test_audit_chain_tamper_detection():
     
     # 5. Verify the chain catches the corruption
     print("Verifying tampered chain...")
-    with pytest.raises(CryptographicTamperError) as exc:
-        verify_audit_chain()
-        
-    print(f"Successfully caught tamper attempt: {exc.value}")
-    assert "Data corruption detected" in str(exc.value)
+    try:
+        with pytest.raises(CryptographicTamperError) as exc:
+            verify_audit_chain()
+            
+        print(f"Successfully caught tamper attempt: {exc.value}")
+        assert "Data corruption detected" in str(exc.value)
+    finally:
+        # Clean up tampered rows so subsequent tests have a valid state
+        db_cleanup = SessionLocal()
+        db_cleanup.execute(text("TRUNCATE TABLE audit_logs CASCADE"))
+        db_cleanup.commit()
+        db_cleanup.close()
+

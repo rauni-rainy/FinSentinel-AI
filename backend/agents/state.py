@@ -11,4 +11,5 @@ class InvestigationState(TypedDict):
     recommended_action: str
     human_decision: Optional[str]
     session_id: Optional[str]
+    escalated_at: Optional[str]
     messages: Annotated[list, operator.add]

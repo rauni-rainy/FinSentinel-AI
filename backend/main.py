@@ -1,4 +1,8 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
+from typing import List, Dict, Any
+import asyncio
+from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import io
@@ -16,6 +20,113 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+async def escalation_sweep():
+    import psycopg
+    from langgraph.checkpoint.postgres import PostgresSaver
+    from agents.graph import build_investigation_graph
+    
+    db_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/finsentinel")
+    
+    def _sync_db_check():
+        window_minutes = int(os.getenv("ESCALATION_WINDOW_MINUTES", "30"))
+        escalations = []
+        try:
+            with psycopg.connect(db_url, autocommit=True) as conn:
+                cp = PostgresSaver(conn)
+                workflow = build_investigation_graph()
+                app_graph = workflow.compile(checkpointer=cp)
+                
+                try:
+                    states = list(cp.list(None))
+                except Exception:
+                    states = []
+                
+                seen_threads = set()
+                for s in states:
+                    thread_id = s.config["configurable"]["thread_id"]
+                    if thread_id in seen_threads:
+                        continue
+                    seen_threads.add(thread_id)
+                    
+                    snapshot = app_graph.get_state({"configurable": {"thread_id": thread_id}})
+                    if snapshot.tasks and any(t.interrupts for t in snapshot.tasks):
+                        state_dict = snapshot.values
+                        escalated_at = state_dict.get("escalated_at")
+                        
+                        if not escalated_at and snapshot.created_at:
+                            now = datetime.now(timezone.utc)
+                            # snapshot.created_at is a string like '2026-08-17T20:27:44.828566+00:00'
+                            created_dt = datetime.fromisoformat(snapshot.created_at)
+                            if not created_dt.tzinfo:
+                                created_dt = created_dt.replace(tzinfo=timezone.utc)
+                            
+                            if (now - created_dt).total_seconds() > (window_minutes * 60):
+                                print(f"SWEEP: Escalating stale thread {thread_id}")
+                                app_graph.update_state(
+                                    {"configurable": {"thread_id": thread_id}}, 
+                                    {"escalated_at": now.isoformat()},
+                                    as_node="human_review_gate"
+                                )
+                                escalations.append(thread_id)
+        except Exception as e:
+            print(f"Sweep DB error: {e}")
+        return escalations
+
+    while True:
+        await asyncio.sleep(5)  # Wait for startup to complete
+        try:
+            escalations = await asyncio.to_thread(_sync_db_check)
+            for thread_id in escalations:
+                await manager.broadcast({"event": "escalation", "thread_id": thread_id})
+        except Exception as e:
+            print(f"Sweep error: {e}")
+        await asyncio.sleep(55)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(escalation_sweep())
+
+@app.websocket("/ws/notifications")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+class WebhookPayload(BaseModel):
+    thread_id: str
+    confidence: float
+    amount: float
+
+@app.post("/webhooks/interrupt")
+async def handle_interrupt_webhook(payload: WebhookPayload):
+    print(f"STUB: Sent slack notification for thread {payload.thread_id} - Conf: {payload.confidence}, Amount: ${payload.amount}")
+    await manager.broadcast({"event": "new_interrupt", "thread_id": payload.thread_id})
+    return {"status": "ok"}
 
 @app.get("/health")
 def health_check():
@@ -161,7 +272,14 @@ def get_pending_cases():
             try:
                 # get_state WITHOUT checkpoint_id returns the LATEST StateSnapshot for the thread
                 snapshot = app.get_state({"configurable": {"thread_id": thread_id}})
-                if snapshot.tasks and any(t.interrupts for t in snapshot.tasks):
+                # NOTE: task.interrupts is () in stored checkpoints — it's only populated during
+                # live graph execution. The reliable signal is snapshot.next containing the
+                # interrupt node name ('human_review_gate').
+                is_paused = (
+                    "human_review_gate" in (snapshot.next or [])
+                    or (snapshot.tasks and any(t.interrupts for t in snapshot.tasks))
+                )
+                if is_paused:
                     state_dict = snapshot.values
                     txn = state_dict.get("transaction", {})
                     pending.append({
@@ -171,7 +289,8 @@ def get_pending_cases():
                         "calibrated_confidence": state_dict.get("calibrated_confidence", 0.0),
                         "risk_score": state_dict.get("risk_score", 0.0),
                         "summary": state_dict.get("investigation_notes", ""),
-                        "recommended_action": state_dict.get("recommended_action", "APPROVE")
+                        "recommended_action": state_dict.get("recommended_action", "APPROVE"),
+                        "escalated_at": state_dict.get("escalated_at")
                     })
             except Exception:
                 continue
@@ -265,3 +384,139 @@ def resume_case(thread_id: str, payload: ResumeRequest):
             return {"status": "success", "decision": payload.decision}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/cases/{thread_id}/history")
+def get_case_history(thread_id: str):
+    import psycopg
+    from langgraph.checkpoint.postgres import PostgresSaver
+    from agents.graph import build_investigation_graph
+    
+    db_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/finsentinel")
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        cp = PostgresSaver(conn)
+        workflow = build_investigation_graph()
+        app_graph = workflow.compile(checkpointer=cp)
+        
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            history = list(app_graph.get_state_history(config))
+            result = []
+            for h in history:
+                result.append({
+                    "checkpoint_id": h.config["configurable"].get("checkpoint_id"),
+                    "created_at": h.created_at,
+                    "step": h.metadata.get("step"),
+                    "source": h.metadata.get("source"),
+                    "next": h.next,
+                    "values": h.values
+                })
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+class ForkRequest(BaseModel):
+    checkpoint_id: str
+    overrides: dict
+
+@app.post("/cases/{thread_id}/fork")
+async def fork_case(thread_id: str, payload: ForkRequest):
+    import psycopg
+    import uuid
+    import asyncio
+    from langgraph.checkpoint.postgres import PostgresSaver
+    from agents.graph import build_investigation_graph
+    
+    db_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/finsentinel")
+    
+    def _fork_sync():
+        with psycopg.connect(db_url, autocommit=True) as conn:
+            cp = PostgresSaver(conn)
+            workflow = build_investigation_graph()
+            app_graph = workflow.compile(checkpointer=cp)
+            
+            old_config = {"configurable": {"thread_id": thread_id, "checkpoint_id": payload.checkpoint_id}}
+            old_state = app_graph.get_state(old_config)
+            
+            new_thread_id = str(uuid.uuid4())
+            new_config = {"configurable": {"thread_id": new_thread_id}}
+            
+            new_values = old_state.values.copy()
+            new_values.update(payload.overrides)
+            
+            # Determine which node produced this state to pretend it just finished
+            as_node = old_state.metadata.get("source")
+            if as_node in ("loop", "update"):
+                writes = old_state.metadata.get("writes", {})
+                if writes and isinstance(writes, dict):
+                    as_node = list(writes.keys())[0]
+                else:
+                    # Deduce from next
+                    next_nodes = old_state.next
+                    if "human_review_gate" in next_nodes:
+                        as_node = "calibrate"
+                    elif "calibrate" in next_nodes:
+                        as_node = "investigate"
+                    elif "investigate" in next_nodes:
+                        as_node = "retrieve_similar_cases"
+                    elif "retrieve_similar_cases" in next_nodes:
+                        as_node = "intake"
+                    elif "finalize" in next_nodes:
+                        as_node = "human_review_gate"
+                    else:
+                        as_node = None
+                
+            # If still None or missing, default to input
+            if not as_node or as_node == "input":
+                app_graph.update_state(new_config, new_values)
+            else:
+                app_graph.update_state(new_config, new_values, as_node=as_node)
+            
+            for chunk in app_graph.stream(None, new_config):
+                pass
+                
+            return new_thread_id
+            
+    try:
+        new_id = await asyncio.to_thread(_fork_sync)
+        return {"status": "success", "new_thread_id": new_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# Credit Risk Triage (Decision Support System)
+# ==========================================
+
+from services.credit_triage import (
+    ApplicantProfile,
+    MacroIndicators,
+    RiskFactorSummary,
+    evaluate_credit_risk,
+    get_macro_benchmarks,
+    get_preset_applicants
+)
+
+@app.get("/credit/macro-benchmarks")
+def get_macro_indicators():
+    """Returns current macroeconomic benchmarks and sector default rates."""
+    return get_macro_benchmarks()
+
+@app.get("/credit/presets")
+def get_credit_presets():
+    """Returns sample applicant profiles for underwriting demonstration."""
+    return get_preset_applicants()
+
+@app.post("/credit/triage", response_model=RiskFactorSummary)
+def post_credit_triage(applicant: ApplicantProfile):
+    """
+    Evaluates applicant financial metrics, calculates DTI and revolving utilization,
+    cross-references against macroeconomic benchmarks, and surfaces risk factors.
+    
+    GUARANTEE (Constitution Rule #6):
+    The returned RiskFactorSummary contains NO autonomous approve/deny decisions.
+    """
+    try:
+        summary = evaluate_credit_risk(applicant)
+        return summary
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Credit triage calculation failed: {str(e)}")
+

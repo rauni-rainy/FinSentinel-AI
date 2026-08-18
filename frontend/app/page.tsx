@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { CaseQueue, PendingCase } from "../components/CaseQueue";
 import { CaseDetails } from "../components/CaseDetails";
 import { TrustScorePanel } from "../components/TrustScorePanel";
-import { Activity, LayoutDashboard, ShieldAlert, Download } from "lucide-react";
+import { Activity, LayoutDashboard, ShieldAlert, Download, CreditCard, Crosshair } from "lucide-react";
 
 export default function Home() {
   const [cases, setCases] = useState<PendingCase[]>([]);
@@ -29,6 +30,21 @@ export default function Home() {
 
   useEffect(() => {
     fetchCases();
+    
+    const ws = new WebSocket("ws://localhost:8000/ws/notifications");
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event === "new_interrupt" || data.event === "escalation") {
+          fetchCases();
+        }
+      } catch (e) {
+        console.error("WS parse error", e);
+      }
+    };
+    return () => {
+      ws.close();
+    };
   }, []);
 
   const handleCaseProcessed = () => {
@@ -54,13 +70,29 @@ export default function Home() {
               <p className="text-xs text-slate-400 font-mono">Investigator Cockpit</p>
             </div>
           </div>
-          <button 
-            onClick={downloadReport}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
-            title="Download Executive Report (ZIP)"
-          >
-            <Download className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <Link
+              href="/credit-triage"
+              className="p-2 bg-slate-800 hover:bg-blue-600/30 text-blue-400 hover:text-blue-200 border border-blue-500/20 rounded transition-colors"
+              title="Credit Risk Triage"
+            >
+              <CreditCard className="w-4 h-4" />
+            </Link>
+            <Link
+              href="/red-team"
+              className="p-2 bg-slate-800 hover:bg-red-600/30 text-red-400 hover:text-red-200 border border-red-500/20 rounded transition-colors"
+              title="Red-Team Benchmark"
+            >
+              <Crosshair className="w-4 h-4" />
+            </Link>
+            <button 
+              onClick={downloadReport}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
+              title="Download Executive Report (ZIP)"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         
         <div className="flex-1 overflow-hidden">
