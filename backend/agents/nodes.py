@@ -18,6 +18,22 @@ from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 import json
 
+def _ollama_model_available(model_name: str, base_url: str = "http://localhost:11434") -> bool:
+    """
+    Returns True only if Ollama is reachable AND the specified model has been pulled.
+    Probes /api/tags instead of the root endpoint so a running-but-empty Ollama
+    instance does NOT silently activate the statistical fallback path.
+    """
+    import urllib.request
+    import json as _json
+    try:
+        with urllib.request.urlopen(f"{base_url}/api/tags", timeout=2) as resp:
+            data = _json.loads(resp.read())
+        pulled = [m["name"].split(":")[0] for m in data.get("models", [])]
+        return model_name.split(":")[0] in pulled
+    except Exception:
+        return False
+
 class InvestigationReasoning(BaseModel):
     signal_magnitude: str = Field(description="The magnitude of the fast-screen signal (e.g., Z-score, velocity multiple)")
     similar_cases_context: str = Field(description="How many similar cases were retrieved and their average similarity score")
@@ -42,10 +58,20 @@ def retrieve_similar_cases_node(state: InvestigationState) -> InvestigationState
     summary_text = f"Transaction for ${txn.get('amount', 0)} at {txn.get('merchant_category', 'unknown')} by {txn.get('account_id', 'unknown')}."
     
     try:
-        urllib.request.urlopen("http://localhost:11434/", timeout=1)
+        if not _ollama_model_available("nomic-embed-text"):
+            raise RuntimeError("nomic-embed-text is not pulled in Ollama")
         embedder = OllamaEmbeddings(model="nomic-embed-text")
         emb = embedder.embed_query(summary_text)
-    except Exception:
+    except Exception as e:
+        # CONSTITUTION RULE #4: Audit the fallback BEFORE the zero-vector is used
+        log_audit(
+            execution_id=txn.get("transaction_id", "unknown"),
+            node_name="retrieve_similar_cases",
+            action_type="embedding_ollama_fallback",
+            record_type="ollama_fallback",
+            payload={"summary_text": summary_text, "model": "nomic-embed-text"},
+            result={"error": str(e), "fallback": "zero_vector_768"},
+        )
         emb = [0.0] * 768
         
     similar_cases = db.query(HistoricalCase).order_by(HistoricalCase.embedding.cosine_distance(emb)).limit(3).all()
@@ -96,9 +122,13 @@ def investigate_node(state: InvestigationState) -> InvestigationState:
         "similar_cases_summaries": [c["summary"] for c in cases]
     }
     
+    ollama_model = os.getenv("OLLAMA_MODEL", "phi4-mini")
+
     try:
-        urllib.request.urlopen("http://localhost:11434/", timeout=1)
-        llm = ChatOllama(model="phi4-mini", format="json", temperature=0)
+        if not _ollama_model_available(ollama_model):
+            raise RuntimeError(f"Ollama model '{ollama_model}' is not pulled or Ollama is unreachable")
+
+        llm = ChatOllama(model=ollama_model, format="json", temperature=0)
         prompt = f"""You are a financial crime investigator.
         Analyze this transaction context and output your reasoning STRICTLY as a JSON object with three keys:
         - "signal_magnitude": (string) Explain the Z-score and velocity.
@@ -107,9 +137,30 @@ def investigate_node(state: InvestigationState) -> InvestigationState:
         
         Context: {json.dumps(context_data)}
         """
+
+        # CONSTITUTION RULE #4: Audit the LLM call BEFORE its result is used
+        log_audit(
+            execution_id=txn.get("transaction_id", "unknown"),
+            node_name="investigate",
+            action_type="llm_invoke",
+            record_type="investigation",
+            payload=context_data,
+            prompt=prompt,
+            result={},  # pre-flight entry; finalize_node records the complete outcome
+        )
+
         res = llm.invoke(prompt)
         notes = json.loads(res.content)
     except Exception as e:
+        # CONSTITUTION RULE #4: Explicitly audit when the statistical fallback activates
+        log_audit(
+            execution_id=txn.get("transaction_id", "unknown"),
+            node_name="investigate",
+            action_type="llm_ollama_fallback",
+            record_type="ollama_fallback",
+            payload=context_data,
+            result={"error": str(e), "fallback": "statistical_heuristic"},
+        )
         notes = {
             "signal_magnitude": f"Z-Score {signals['z_score']} | Velocity 7d: {signals['velocity_multiple_7d']}x baseline.",
             "similar_cases_context": f"{len(cases)} similar historical links retrieved. Avg cosine similarity: {signals['average_similarity_score']}.",

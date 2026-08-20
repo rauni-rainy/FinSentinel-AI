@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { ShieldAlert, RefreshCw, ChevronLeft, CreditCard, LayoutDashboard } from "lucide-react";
+
 
 export default function RedTeamPage() {
   const [data, setData] = useState<any>(null);
@@ -41,7 +41,7 @@ export default function RedTeamPage() {
   if (!data) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-300 flex flex-col items-center justify-center p-8 font-mono">
-        <ShieldAlert className="w-16 h-16 text-slate-600 mb-6" />
+        <div className="text-6xl text-slate-600 mb-6 font-bold">[!]</div>
         <h1 className="text-2xl font-bold text-slate-100 mb-2">Simulation Not Yet Run</h1>
         <p className="text-slate-500 max-w-md text-center mb-8">
           The Adversarial Red-Team Simulator hasn't generated any artifacts yet. Run the Python script or `make redteam` to execute the benchmark against the LLM, then refresh this page.
@@ -51,19 +51,19 @@ export default function RedTeamPage() {
             href="/"
             className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors flex items-center gap-2"
           >
-            <LayoutDashboard className="w-4 h-4" /> Cockpit
+            [Cockpit]
           </Link>
           <Link
             href="/credit-triage"
             className="px-6 py-2 bg-blue-900/60 hover:bg-blue-800 text-blue-200 border border-blue-700 rounded transition-colors flex items-center gap-2"
           >
-            <CreditCard className="w-4 h-4" /> Credit Triage
+            [Credit Triage]
           </Link>
           <button 
             onClick={fetchResults}
             className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors flex items-center gap-2"
           >
-            <RefreshCw className="w-4 h-4" /> Check for Artifact
+            [Refresh] Check for Artifact
           </button>
         </div>
       </div>
@@ -97,15 +97,15 @@ export default function RedTeamPage() {
             <div>
               <div className="flex items-center gap-4 mb-4 text-sm">
                 <Link href="/" className="inline-flex items-center gap-2 text-brand-blue hover:text-sky-300 transition-colors">
-                  <ChevronLeft className="w-4 h-4" /> Back to Triage Queue
+                  [&lt;] Back to Triage Queue
                 </Link>
                 <span className="text-slate-700">|</span>
                 <Link href="/credit-triage" className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 transition-colors">
-                  <CreditCard className="w-4 h-4" /> Credit Risk Triage
+                  [Credit Risk]
                 </Link>
               </div>
               <h1 className="text-3xl font-bold text-slate-100 tracking-tight flex items-center gap-3">
-                <ShieldAlert className="text-brand-red w-8 h-8" /> Adversarial Evaluation Report
+                <span className="text-brand-red">[!]</span> Adversarial Evaluation Report
               </h1>
               <p className="text-slate-500 mt-2 max-w-2xl text-sm leading-relaxed">
                 Measuring detection confidence decay as synthetic adversaries progressively structure transactions and blur identity graphs to evade the `{data.metadata.model}` LLM node.

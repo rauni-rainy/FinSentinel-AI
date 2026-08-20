@@ -67,7 +67,7 @@ export function TrustScorePanel() {
             <Tooltip 
               contentStyle={{ backgroundColor: "#0f172a", borderColor: "#1e293b", fontSize: "12px", fontFamily: "monospace" }}
               itemStyle={{ color: "#f8fafc" }}
-              formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, ""]}
+              formatter={(value: any, name: any) => [`${(Number(value) * 100).toFixed(1)}%`, name]}
             />
             <Line type="monotone" dataKey="precision" stroke="#003366" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
             <Line type="monotone" dataKey="recall" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />

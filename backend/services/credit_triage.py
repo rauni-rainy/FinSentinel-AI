@@ -44,12 +44,43 @@ class RiskFactor(BaseModel):
     title: str
     description: str
 
+class AdverseActionFactor(BaseModel):
+    """
+    FCRA 615(a) & ECOA Reg B Principal Contributing Factor.
+    Surfaces the top ranked risk elements for human underwriters
+    when completing statutory adverse action or conditioning notices.
+    """
+    factor_code: str = Field(description="Standardized factor code, e.g. FCRA-DTI-01")
+    rank: int = Field(description="Principal ranking 1 to 4")
+    title: str = Field(description="Factor title for regulatory disclosure")
+    metric_observed: str = Field(description="Observed value vs benchmark")
+    statutory_context: str = Field(description="ECOA / FCRA disclosure explanation")
+
+class StressScenarioInput(BaseModel):
+    scenario_name: str = Field(default="Custom Shock")
+    rate_shock_bps: float = Field(default=200.0, description="Interest rate increase in basis points (200 = +2.00%)")
+    income_haircut_pct: float = Field(default=10.0, description="Income reduction percentage (10 = -10%)")
+    inflation_expense_shock_pct: float = Field(default=5.0, description="Living/debt expense escalation (%)")
+
+class StressScenarioOutput(BaseModel):
+    scenario_name: str
+    rate_shock_bps: float
+    income_haircut_pct: float
+    inflation_expense_shock_pct: float
+    stressed_monthly_income: float
+    stressed_monthly_debt: float
+    stressed_front_end_dti_pct: float
+    stressed_back_end_dti_pct: float
+    stressed_residual_income: float
+    stressed_liquidity_coverage_months: float
+    resilience_classification: str = Field(description="Telemetry band: HIGH_BUFFER, MODERATE_SENSITIVITY, or ACUTE_STRESS")
+
 class RiskFactorSummary(BaseModel):
     """
     STRUCTURAL ENFORCEMENT:
-    This model contains strictly calculated ratios, macroeconomic context,
-    categorized risk factors, and plain-language underwriter synthesis.
-    It contains NO decision, recommendation, or approval fields.
+    Contains calculated ratios, macroeconomic context, categorized risk factors,
+    stress sensitivity scenarios, adverse action codes, and plain-language narrative.
+    Contains ZERO decision, recommendation, or approval fields.
     """
     applicant_id: str
     applicant_name: str
@@ -57,11 +88,29 @@ class RiskFactorSummary(BaseModel):
     ratios: CalculatedRatios
     macro_context: MacroIndicators
     risk_factors: List[RiskFactor]
+    adverse_action_factors: List[AdverseActionFactor] = Field(default_factory=list)
+    stress_scenarios: List[StressScenarioOutput] = Field(default_factory=list)
     underwriter_narrative: str
     audit_id: Optional[str] = None
     disclaimer: str = Field(
-        default="DECISION SUPPORT ONLY — NOT AN AUTONOMOUS DECISION. This summary surfaces objective financial ratios and risk factors for a human underwriter. Final credit authority resides exclusively with licensed human underwriters."
+        default="DECISION SUPPORT ONLY — NOT AN AUTONOMOUS DECISION. This summary surfaces objective financial ratios, stress telemetry, and risk factors for a human underwriter. Final credit authority resides exclusively with licensed human underwriters."
     )
+
+class MemoRequest(BaseModel):
+    applicant: ApplicantProfile
+    underwriter_name: str = Field(default="Licensed Credit Underwriter")
+    underwriter_notes: str = Field(default="")
+    checklist_verifications: Dict[str, bool] = Field(default_factory=dict)
+
+class UnderwriterCreditMemo(BaseModel):
+    memo_id: str
+    generated_at: str
+    applicant_id: str
+    applicant_name: str
+    underwriter_name: str
+    audit_id: str
+    formatted_markdown: str
+    disclaimer: str
 
 
 # --- Sector Macro Indicators Database ---
@@ -76,6 +125,7 @@ SECTOR_DEFAULT_BENCHMARKS = {
     "Commercial Real Estate": 4.8,
     "Hospitality & Leisure": 4.5,
     "Construction": 4.2,
+    "Biotech / Pharma": 1.7,
     "General": 2.5
 }
 
@@ -114,6 +164,86 @@ def calculate_ratios(applicant: ApplicantProfile) -> CalculatedRatios:
         liquidity_coverage_months=round(liquidity_coverage, 2),
         residual_income_monthly=round(residual_income, 2)
     )
+
+
+# --- Stress-Testing & Sensitivity Simulation Engine ---
+
+def calculate_stress_scenario(
+    applicant: ApplicantProfile, 
+    scenario: StressScenarioInput
+) -> StressScenarioOutput:
+    """
+    Computes mathematical impact of interest rate hike, income haircut, and expense shock.
+    """
+    stressed_income = max(applicant.monthly_gross_income * (1.0 - (scenario.income_haircut_pct / 100.0)), 1.0)
+    
+    # 1. Variable debt interest escalation (revolving balances)
+    annual_rate_shock_factor = scenario.rate_shock_bps / 10000.0
+    monthly_revolving_interest_increase = (applicant.revolving_credit_balance * annual_rate_shock_factor) / 12.0
+    
+    # 2. Proposed payment interest adjustment
+    proposed_payment_shock = applicant.proposed_loan_payment * (1.0 + (annual_rate_shock_factor * 0.4))
+    
+    # 3. Existing debt cost escalation (inflation on living/service debt)
+    existing_debt_shocked = applicant.existing_monthly_debt * (1.0 + (scenario.inflation_expense_shock_pct / 100.0))
+    
+    stressed_total_debt = existing_debt_shocked + proposed_payment_shock + monthly_revolving_interest_increase
+    
+    stressed_front_end = (proposed_payment_shock / stressed_income) * 100.0
+    stressed_back_end = (stressed_total_debt / stressed_income) * 100.0
+    stressed_residual = stressed_income - stressed_total_debt
+    stressed_liquidity = applicant.liquid_assets / max(stressed_total_debt, 1.0)
+    
+    # Telemetry classification
+    if stressed_back_end <= 43.0 and stressed_liquidity >= 3.0:
+        classification = "HIGH_BUFFER"
+    elif stressed_back_end <= 52.0 and stressed_liquidity >= 1.5:
+        classification = "MODERATE_SENSITIVITY"
+    else:
+        classification = "ACUTE_STRESS"
+        
+    return StressScenarioOutput(
+        scenario_name=scenario.scenario_name,
+        rate_shock_bps=scenario.rate_shock_bps,
+        income_haircut_pct=scenario.income_haircut_pct,
+        inflation_expense_shock_pct=scenario.inflation_expense_shock_pct,
+        stressed_monthly_income=round(stressed_income, 2),
+        stressed_monthly_debt=round(stressed_total_debt, 2),
+        stressed_front_end_dti_pct=round(stressed_front_end, 2),
+        stressed_back_end_dti_pct=round(stressed_back_end, 2),
+        stressed_residual_income=round(stressed_residual, 2),
+        stressed_liquidity_coverage_months=round(stressed_liquidity, 2),
+        resilience_classification=classification
+    )
+
+def generate_default_stress_matrix(applicant: ApplicantProfile) -> List[StressScenarioOutput]:
+    scenarios = [
+        StressScenarioInput(
+            scenario_name="Baseline (Current Economic Conditions)",
+            rate_shock_bps=0.0,
+            income_haircut_pct=0.0,
+            inflation_expense_shock_pct=0.0
+        ),
+        StressScenarioInput(
+            scenario_name="Moderate Rate Hike (+150 bps Fed Shock)",
+            rate_shock_bps=150.0,
+            income_haircut_pct=0.0,
+            inflation_expense_shock_pct=3.0
+        ),
+        StressScenarioInput(
+            scenario_name="Severe Stagflation (+300 bps / -12% Income)",
+            rate_shock_bps=300.0,
+            income_haircut_pct=12.0,
+            inflation_expense_shock_pct=6.0
+        ),
+        StressScenarioInput(
+            scenario_name="Income Disruption Shock (-20% Income)",
+            rate_shock_bps=50.0,
+            income_haircut_pct=20.0,
+            inflation_expense_shock_pct=4.0
+        )
+    ]
+    return [calculate_stress_scenario(applicant, s) for s in scenarios]
 
 
 # --- Risk Factor Synthesizer ---
@@ -251,6 +381,100 @@ def synthesize_risk_factors(
     return factors
 
 
+# --- FCRA / ECOA Principal Adverse Action Factor Extractor ---
+
+def extract_adverse_action_factors(
+    applicant: ApplicantProfile,
+    ratios: CalculatedRatios, 
+    macro: MacroIndicators, 
+    factors: List[RiskFactor]
+) -> List[AdverseActionFactor]:
+    """
+    Ranks the top principal risk factors (up to 4) under FCRA 615(a) / ECOA Reg B
+    guidelines for human underwriter reference during adverse action notice completion.
+    """
+    candidates = []
+    
+    # 1. Back-end DTI
+    if ratios.back_end_dti_pct > 36.0:
+        severity_score = (ratios.back_end_dti_pct - 36.0) * 2.0
+        candidates.append((
+            severity_score,
+            AdverseActionFactor(
+                factor_code="FCRA-DTI-01",
+                rank=0,
+                title="Debt Obligations Relative to Income",
+                metric_observed=f"Back-End DTI is {ratios.back_end_dti_pct:.1f}% (Guideline threshold: 36.0%-43.0%)",
+                statutory_context="Total monthly debt payments exceed conforming income capacity guidelines."
+            )
+        ))
+        
+    # 2. Revolving Credit Utilization
+    if ratios.credit_utilization_pct > 30.0:
+        severity_score = (ratios.credit_utilization_pct - 30.0) * 1.5
+        candidates.append((
+            severity_score,
+            AdverseActionFactor(
+                factor_code="FCRA-UTIL-02",
+                rank=0,
+                title="Proportion of Balances to Total Available Credit Lines",
+                metric_observed=f"Credit utilization is {ratios.credit_utilization_pct:.1f}% on ${applicant.total_credit_limit:,.0f} limit",
+                statutory_context="Elevated revolving balance concentration reduces short-term liquidity reserves."
+            )
+        ))
+        
+    # 3. Post-Closing Liquid Asset Reserves
+    if ratios.liquidity_coverage_months < 6.0:
+        severity_score = (6.0 - ratios.liquidity_coverage_months) * 10.0
+        candidates.append((
+            severity_score,
+            AdverseActionFactor(
+                factor_code="FCRA-LIQ-03",
+                rank=0,
+                title="Insufficient Post-Closing Liquid Asset Reserves",
+                metric_observed=f"Liquid reserves cover {ratios.liquidity_coverage_months:.1f} months of debt (Benchmark: 6.0 months)",
+                statutory_context="Available liquid assets provide narrow contingency buffer against unexpected cash flow interruptions."
+            )
+        ))
+        
+    # 4. Employment Tenure
+    if applicant.employment_duration_years < 2.0:
+        severity_score = (2.0 - applicant.employment_duration_years) * 15.0
+        candidates.append((
+            severity_score,
+            AdverseActionFactor(
+                factor_code="FCRA-STAB-04",
+                rank=0,
+                title="Limited Current Employment or Industry Tenure",
+                metric_observed=f"Tenure is {applicant.employment_duration_years:.1f} years in {applicant.industry_sector} (Benchmark: >=2.0 years)",
+                statutory_context="Short time in current position or industry introduces income continuity variance."
+            )
+        ))
+        
+    # 5. Sector Default Rate
+    if macro.sector_default_rate_pct > 3.0:
+        severity_score = (macro.sector_default_rate_pct - 3.0) * 8.0
+        candidates.append((
+            severity_score,
+            AdverseActionFactor(
+                factor_code="FCRA-SECTOR-05",
+                rank=0,
+                title="Elevated Sector Default Rate in Applicant Industry",
+                metric_observed=f"Sector default benchmark is {macro.sector_default_rate_pct:.1f}% in {applicant.industry_sector} (Natl Avg: 2.5%)",
+                statutory_context="Macroeconomic headwinds and historical default rates in the borrower's industry sector."
+            )
+        ))
+        
+    # Sort candidates by severity score descending and take top 4
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    top_factors = []
+    for rank, (_, factor) in enumerate(candidates[:4], start=1):
+        factor.rank = rank
+        top_factors.append(factor)
+        
+    return top_factors
+
+
 # --- Underwriter Narrative Synthesizer ---
 
 def generate_underwriter_narrative(
@@ -300,6 +524,8 @@ def evaluate_credit_risk(
     ratios = calculate_ratios(applicant)
     factors = synthesize_risk_factors(applicant, ratios, macro)
     narrative = generate_underwriter_narrative(applicant, ratios, macro, factors)
+    stress_scenarios = generate_default_stress_matrix(applicant)
+    adverse_action_factors = extract_adverse_action_factors(applicant, ratios, macro, factors)
     
     eval_id = str(uuid.uuid4())
     evaluated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -311,6 +537,8 @@ def evaluate_credit_risk(
         ratios=ratios,
         macro_context=macro,
         risk_factors=factors,
+        adverse_action_factors=adverse_action_factors,
+        stress_scenarios=stress_scenarios,
         underwriter_narrative=narrative,
         audit_id=eval_id
     )
@@ -326,6 +554,95 @@ def evaluate_credit_risk(
     )
     
     return summary
+
+
+# --- Underwriter Credit Memorandum Generator ---
+
+def generate_credit_memo(
+    applicant: ApplicantProfile,
+    summary: RiskFactorSummary,
+    underwriter_name: str,
+    underwriter_notes: str,
+    checklist_verifications: Dict[str, bool]
+) -> UnderwriterCreditMemo:
+    memo_id = f"MEMO-{uuid.uuid4().hex[:8].upper()}"
+    generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    
+    checklist_md = "\n".join([
+        f"- [{'x' if v else ' '}] **{k.replace('_', ' ').title()} Verified**"
+        for k, v in checklist_verifications.items()
+    ]) if checklist_verifications else "- [x] Standard underwriting pre-screening verified"
+    
+    stress_table_md = "\n".join([
+        f"| {s.scenario_name} | ${s.stressed_monthly_income:,.0f} | ${s.stressed_monthly_debt:,.0f} | {s.stressed_back_end_dti_pct:.1f}% | ${s.stressed_residual_income:,.0f} | {s.stressed_liquidity_coverage_months:.1f} mos | `{s.resilience_classification}` |"
+        for s in summary.stress_scenarios
+    ])
+    
+    adverse_md = "\n".join([
+        f"{idx}. **[{f.factor_code}] {f.title}**: {f.metric_observed}. *({f.statutory_context})*"
+        for idx, f in enumerate(summary.adverse_action_factors, 1)
+    ]) if summary.adverse_action_factors else "None noted (Standard prime parameters observed)."
+    
+    markdown_content = f"""# FinSentinel AI — Institutional Underwriter Credit Memorandum
+**Document ID:** `{memo_id}` | **Audit Ref:** `{summary.audit_id}`  
+**Evaluation Date:** `{generated_at}` | **Human Underwriter:** `{underwriter_name}`
+
+---
+
+### 1. Executive Summary & Facility Purpose
+- **Applicant:** {applicant.applicant_name} (`{applicant.applicant_id}`)
+- **Industry Sector:** {applicant.industry_sector} ({applicant.employment_duration_years:.1f} yrs tenure)
+- **Stated Facility Purpose:** {applicant.stated_loan_purpose}
+- **Proposed Installment Payment:** ${applicant.proposed_loan_payment:,.2f} / month
+
+---
+
+### 2. Verified Financial Telemetry & Key Ratios
+| Ratio Metric | Calculated Value | Institutional Benchmark Band | Observed Variance |
+| :--- | :--- | :--- | :--- |
+| **Front-End DTI** | {summary.ratios.front_end_dti_pct:.1f}% | <= 28.0% | {'Within guidelines' if summary.ratios.front_end_dti_pct <= 28 else 'Elevated'} |
+| **Back-End DTI** | {summary.ratios.back_end_dti_pct:.1f}% | <= 43.0% | {'Conforming' if summary.ratios.back_end_dti_pct <= 43 else 'Stretched'} |
+| **Revolving Utilization** | {summary.ratios.credit_utilization_pct:.1f}% | <= 30.0% | {'Controlled' if summary.ratios.credit_utilization_pct <= 30 else 'High line usage'} |
+| **Liquidity Coverage** | {summary.ratios.liquidity_coverage_months:.1f} months | >= 6.0 months | {'Strong cushion' if summary.ratios.liquidity_coverage_months >= 6 else 'Thin reserve margin'} |
+| **Residual Cash Flow** | ${summary.ratios.residual_income_monthly:,.2f} | Positive discretionary | Post-debt margin |
+
+---
+
+### 3. Macro Stress-Testing & Sensitivity Simulation
+| Scenario Name | Stressed Income | Stressed Debt | Stressed DTI | Stressed Residual | Liquidity Buffer | Telemetry Band |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+{stress_table_md}
+
+---
+
+### 4. FCRA 615(a) / ECOA Reg B Principal Adverse Action Factors
+*(Surfaced for human underwriter reference if adverse action or conditioning is required)*
+{adverse_md}
+
+---
+
+### 5. Human Underwriter Verification Checklist & Conditions
+{checklist_md}
+
+**Human Underwriter Manual Notes & Rationale:**
+> {underwriter_notes if underwriter_notes.strip() else "No manual underwriter commentary entered."}
+
+---
+
+### 6. Institutional Compliance & Regulatory Disclaimer
+> **NOTICE:** {summary.disclaimer}
+"""
+
+    return UnderwriterCreditMemo(
+        memo_id=memo_id,
+        generated_at=generated_at,
+        applicant_id=applicant.applicant_id,
+        applicant_name=applicant.applicant_name,
+        underwriter_name=underwriter_name,
+        audit_id=summary.audit_id or "AUDIT-PENDING",
+        formatted_markdown=markdown_content,
+        disclaimer=summary.disclaimer
+    )
 
 
 # --- Sample Presets for Underwriter Demonstrations ---

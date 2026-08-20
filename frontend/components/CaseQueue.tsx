@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { AlertTriangle, TrendingUp, ShieldAlert } from "lucide-react";
+
 
 export type PendingCase = {
   thread_id: string;
@@ -58,7 +58,7 @@ export function CaseQueue({ cases, activeCaseId, onSelectCase }: CaseQueueProps)
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center gap-2">
-                    {isHighRisk ? <ShieldAlert className="w-4 h-4 text-brand-red" /> : <AlertTriangle className="w-4 h-4 text-amber-500" />}
+                    {isHighRisk ? <span className="text-brand-red font-bold font-mono">[!]</span> : <span className="text-amber-500 font-bold font-mono">[*]</span>}
                     <span className="font-mono text-sm font-semibold text-slate-200">
                       {c.account.slice(0, 8)}...
                     </span>

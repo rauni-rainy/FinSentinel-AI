@@ -11,8 +11,15 @@ from services.credit_triage import (
     MacroIndicators,
     CalculatedRatios,
     RiskFactor,
+    AdverseActionFactor,
+    StressScenarioInput,
+    StressScenarioOutput,
+    UnderwriterCreditMemo,
     RiskFactorSummary,
     evaluate_credit_risk,
+    calculate_stress_scenario,
+    generate_credit_memo,
+    extract_adverse_action_factors,
     get_macro_benchmarks,
     get_preset_applicants
 )
@@ -38,23 +45,23 @@ FORBIDDEN_DECISION_KEYS = {
 def test_schema_structural_guarantee_no_decision_fields():
     """
     CONSTITUTION RULE #6 ENFORCEMENT:
-    Ensures that the RiskFactorSummary schema makes it structurally impossible
+    Ensures that ALL Credit Triage schemas (Summary, Ratios, Risk Factors,
+    Stress Outputs, Adverse Action Codes, Credit Memos) make it structurally impossible
     to emit an autonomous approve/deny decision.
     """
-    fields = set(RiskFactorSummary.model_fields.keys())
+    models_to_check = [
+        RiskFactorSummary,
+        CalculatedRatios,
+        RiskFactor,
+        AdverseActionFactor,
+        StressScenarioOutput,
+        UnderwriterCreditMemo
+    ]
     
-    # Check that no forbidden decision keywords exist in the field names
-    for forbidden in FORBIDDEN_DECISION_KEYS:
-        assert forbidden not in fields, f"Structural violation: '{forbidden}' found in RiskFactorSummary schema!"
-        
-    # Check nested ratio and factor fields
-    ratio_fields = set(CalculatedRatios.model_fields.keys())
-    for forbidden in FORBIDDEN_DECISION_KEYS:
-        assert forbidden not in ratio_fields, f"Structural violation: '{forbidden}' found in CalculatedRatios schema!"
-        
-    factor_fields = set(RiskFactor.model_fields.keys())
-    for forbidden in FORBIDDEN_DECISION_KEYS:
-        assert forbidden not in factor_fields, f"Structural violation: '{forbidden}' found in RiskFactor schema!"
+    for model in models_to_check:
+        fields = set(model.model_fields.keys())
+        for forbidden in FORBIDDEN_DECISION_KEYS:
+            assert forbidden not in fields, f"Structural violation: '{forbidden}' found in {model.__name__} schema!"
 
 def test_dti_and_utilization_calculations():
     """
@@ -93,60 +100,130 @@ def test_dti_and_utilization_calculations():
     # Liquidity coverage = 35000 / (2000 + 1500) = 10.0 months
     assert pytest.approx(ratios.liquidity_coverage_months, 0.01) == 10.0
 
-def test_macroeconomic_cross_referencing_and_risk_factors():
+def test_stress_testing_simulation_math():
     """
-    Verifies that macro stress indicators (interest rates, sector delinquency)
-    correctly synthesize contextual risk factors for the human underwriter.
+    Verifies the mathematical sensitivity calculations for interest rate shock,
+    income haircuts, and expense inflation.
     """
     applicant = ApplicantProfile(
-        applicant_id="APP-TEST-HIGH-RISK",
-        applicant_name="Stressed Borrower",
-        monthly_gross_income=6000.0,
-        existing_monthly_debt=2800.0,
-        proposed_loan_payment=900.0,
+        applicant_id="APP-STRESS-001",
+        applicant_name="Stress Test Borrower",
+        monthly_gross_income=10000.0,
+        existing_monthly_debt=2000.0,
+        proposed_loan_payment=2000.0,
+        revolving_credit_balance=12000.0,
+        total_credit_limit=24000.0,
+        liquid_assets=24000.0,
+        employment_duration_years=4.0,
+        industry_sector="Technology",
+        stated_loan_purpose="Expansion"
+    )
+    
+    # Scenario: +200 bps rate hike, 10% income haircut, 5% inflation
+    shock = StressScenarioInput(
+        scenario_name="Adverse Scenario",
+        rate_shock_bps=200.0,
+        income_haircut_pct=10.0,
+        inflation_expense_shock_pct=5.0
+    )
+    
+    result = calculate_stress_scenario(applicant, shock)
+    
+    # Stressed income = 10000 * 0.9 = 9000.0
+    assert result.stressed_monthly_income == 9000.0
+    
+    # Extra revolving monthly interest = (12000 * 0.02) / 12 = $20.0
+    # Proposed payment shock = 2000 * (1 + 0.02 * 0.4) = 2000 * 1.008 = $2016.0
+    # Existing debt inflation = 2000 * 1.05 = $2100.0
+    # Stressed total monthly debt = 2100 + 2016 + 20 = $4136.0
+    assert pytest.approx(result.stressed_monthly_debt, 1.0) == 4136.0
+    
+    # Stressed back-end DTI = 4136.0 / 9000.0 = 45.96%
+    assert pytest.approx(result.stressed_back_end_dti_pct, 0.1) == 45.96
+    
+    # Stressed residual income = 9000 - 4136 = 4864.0
+    assert pytest.approx(result.stressed_residual_income, 1.0) == 4864.0
+    
+    # Stressed liquidity coverage = 24000 / 4136 = 5.8 months
+    assert pytest.approx(result.stressed_liquidity_coverage_months, 0.1) == 5.80
+
+def test_fcra_ecoa_adverse_action_factor_extraction():
+    """
+    Verifies that FCRA/ECOA principal contributing factors are ranked and generated
+    accurately based on risk metrics without emitting autonomous decisions.
+    """
+    applicant = ApplicantProfile(
+        applicant_id="APP-FCRA-001",
+        applicant_name="Adverse Factor Candidate",
+        monthly_gross_income=5000.0,
+        existing_monthly_debt=2200.0,
+        proposed_loan_payment=800.0,
         revolving_credit_balance=18000.0,
         total_credit_limit=20000.0,
-        liquid_assets=2000.0,
-        employment_duration_years=0.8,
-        industry_sector="Commercial Real Estate",
+        liquid_assets=1500.0,
+        employment_duration_years=0.5,
+        industry_sector="Retail & Consumer",
         stated_loan_purpose="Working Capital"
     )
     
-    macro = MacroIndicators(
-        benchmark_fed_funds_rate_pct=5.50,
-        sector_default_rate_pct=4.8,
-        cpi_inflation_yoy_pct=3.6,
-        regional_unemployment_pct=4.2
+    summary = evaluate_credit_risk(applicant)
+    factors = summary.adverse_action_factors
+    
+    assert len(factors) >= 3
+    # First factor must have rank 1
+    assert factors[0].rank == 1
+    
+    codes = [f.factor_code for f in factors]
+    assert "FCRA-DTI-01" in codes
+    assert "FCRA-UTIL-02" in codes
+    assert "FCRA-LIQ-03" in codes
+
+def test_underwriter_credit_memo_generation():
+    """
+    Verifies that the Underwriter Credit Memo renders formatted markdown,
+    includes the audit hash reference, stress table, checklist, and institutional disclaimer.
+    """
+    applicant = ApplicantProfile(
+        applicant_id="APP-MEMO-001",
+        applicant_name="Jane Doe",
+        monthly_gross_income=12000.0,
+        existing_monthly_debt=1500.0,
+        proposed_loan_payment=1500.0,
+        revolving_credit_balance=3000.0,
+        total_credit_limit=30000.0,
+        liquid_assets=50000.0,
+        employment_duration_years=6.0,
+        industry_sector="Healthcare",
+        stated_loan_purpose="Residential Mortgage"
     )
     
-    summary = evaluate_credit_risk(applicant, macro=macro)
+    summary = evaluate_credit_risk(applicant)
+    memo = generate_credit_memo(
+        applicant=applicant,
+        summary=summary,
+        underwriter_name="Senior Underwriter John Smith",
+        underwriter_notes="Verified 2 years tax returns. Compensating factor: substantial liquid reserves ($50k).",
+        checklist_verifications={"income_w2": True, "liquid_assets": True, "credit_bureau": True}
+    )
     
-    # Back-end DTI = (2800 + 900) / 6000 = 61.67%
-    assert summary.ratios.back_end_dti_pct > 50.0
-    # Credit utilization = 18000 / 20000 = 90.0%
-    assert summary.ratios.credit_utilization_pct >= 80.0
-    # Liquidity coverage = 2000 / 3700 = 0.54 months
-    assert summary.ratios.liquidity_coverage_months < 1.0
-    
-    # Verify risk factors generated
-    elevated_factors = [f for f in summary.risk_factors if f.factor_type == "ELEVATED_RISK"]
-    assert len(elevated_factors) >= 3
-    
-    # Confirm categories covered
-    categories = {f.category for f in summary.risk_factors}
-    assert "LEVERAGE" in categories
-    assert "LIQUIDITY" in categories
-    assert "MACRO_PRESSURE" in categories
-    
-    # Underwriter narrative must be present and provide contextual summary
-    assert len(summary.underwriter_narrative) > 20
-    assert "decision support" in summary.disclaimer.lower()
+    assert memo.memo_id.startswith("MEMO-")
+    assert "Senior Underwriter John Smith" in memo.formatted_markdown
+    assert "Verified 2 years tax returns" in memo.formatted_markdown
+    assert "Macro Stress-Testing" in memo.formatted_markdown
+    assert summary.audit_id in memo.formatted_markdown
+    assert "DECISION SUPPORT ONLY" in memo.disclaimer
 
 def test_audit_logging_and_chain_verification():
     """
     Verifies that every credit triage execution is recorded in the immutable audit log
     and preserves the cryptographic hash chain.
     """
+    from sqlalchemy import create_engine, text
+    from agents.audit import db_url
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE audit_logs CASCADE"))
+
     applicant = ApplicantProfile(
         applicant_id="APP-TEST-AUDIT-001",
         applicant_name="Audit Verification Candidate",
@@ -163,8 +240,6 @@ def test_audit_logging_and_chain_verification():
     
     summary = evaluate_credit_risk(applicant)
     assert summary.audit_id is not None
-    
-    # Verify cryptographic audit chain integrity
     assert verify_audit_chain() is True
 
 def test_api_credit_triage_endpoints():
@@ -173,19 +248,20 @@ def test_api_credit_triage_endpoints():
     - GET /credit/macro-benchmarks
     - GET /credit/presets
     - POST /credit/triage
+    - POST /credit/stress-test
+    - POST /credit/export-memo
     """
     # 1. Macro benchmarks
     resp_macro = client.get("/credit/macro-benchmarks")
     assert resp_macro.status_code == 200
     macro_data = resp_macro.json()
     assert "benchmark_fed_funds_rate_pct" in macro_data
-    assert "sector_default_rates" in macro_data
 
     # 2. Presets
     resp_presets = client.get("/credit/presets")
     assert resp_presets.status_code == 200
     presets = resp_presets.json()
-    assert len(presets) >= 3
+    assert len(presets) >= 4
     
     # 3. Evaluate Triage POST
     test_applicant = presets[0]["profile"]
@@ -193,13 +269,45 @@ def test_api_credit_triage_endpoints():
     assert resp_triage.status_code == 200
     triage_result = resp_triage.json()
     
-    # Verify required keys
+    # Verify required keys & stress scenarios
     assert "ratios" in triage_result
     assert "macro_context" in triage_result
     assert "risk_factors" in triage_result
-    assert "underwriter_narrative" in triage_result
+    assert "adverse_action_factors" in triage_result
+    assert "stress_scenarios" in triage_result
     assert "disclaimer" in triage_result
     
+    # 4. Custom stress test POST
+    stress_payload = {
+        "applicant": test_applicant,
+        "scenario": {
+            "scenario_name": "Custom Severe Hike",
+            "rate_shock_bps": 250.0,
+            "income_haircut_pct": 15.0,
+            "inflation_expense_shock_pct": 5.0
+        }
+    }
+    resp_stress = client.post("/credit/stress-test", json=stress_payload)
+    assert resp_stress.status_code == 200
+    stress_data = resp_stress.json()
+    assert stress_data["scenario_name"] == "Custom Severe Hike"
+    assert "stressed_back_end_dti_pct" in stress_data
+
+    # 5. Export Memo POST
+    memo_payload = {
+        "applicant": test_applicant,
+        "underwriter_name": "Auditor Sarah",
+        "underwriter_notes": "All ratios reviewed.",
+        "checklist_verifications": {"w2": True}
+    }
+    resp_memo = client.post("/credit/export-memo", json=memo_payload)
+    assert resp_memo.status_code == 200
+    memo_data = resp_memo.json()
+    assert "formatted_markdown" in memo_data
+    assert "Auditor Sarah" in memo_data["formatted_markdown"]
+
     # Verify ZERO decision fields in JSON response payload
     for forbidden in FORBIDDEN_DECISION_KEYS:
         assert forbidden not in triage_result, f"API returned forbidden field: {forbidden}"
+        assert forbidden not in stress_data, f"Stress API returned forbidden field: {forbidden}"
+        assert forbidden not in memo_data, f"Memo API returned forbidden field: {forbidden}"

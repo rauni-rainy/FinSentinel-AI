@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GitBranch, Clock, ArrowRight } from "lucide-react";
+
 import { ForkModal } from "./ForkModal";
 
 interface TimeTravelReplayProps {
@@ -49,8 +49,7 @@ export function TimeTravelReplay({ caseId, onForked }: TimeTravelReplayProps) {
     <div className="flex flex-col h-full bg-slate-900 border-l border-slate-800 overflow-y-auto">
       <div className="p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-brand-blue" />
-          <h3 className="text-sm font-bold tracking-widest text-slate-300 uppercase">Time-Travel Replay</h3>
+          <h3 className="text-sm font-bold tracking-widest text-slate-300 uppercase">[~] Time-Travel Replay</h3>
         </div>
       </div>
 
@@ -81,8 +80,7 @@ export function TimeTravelReplay({ caseId, onForked }: TimeTravelReplayProps) {
                     onClick={() => handleOpenFork(h)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-brand-blue text-slate-300 hover:text-white rounded text-xs font-mono font-bold transition-colors opacity-0 group-hover:opacity-100"
                   >
-                    <GitBranch className="w-3 h-3" />
-                    Fork Here
+                    [Y] Fork Here
                   </button>
                 </div>
 

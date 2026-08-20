@@ -42,6 +42,14 @@ build/
 *.sqlite3
 *.duckdb
 *.csv
+!demo_data/*.csv
+
+# Temporary and Scratch
+scratch/
+*/scratch/
+persistence_thread.txt
+demo_reports/
+demo_reports_v*/
 
 # MacOS
 .DS_Store

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { ReactFlow, Background, Controls, Node, Edge, MarkerType } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ShieldCheck, ShieldAlert, AlertOctagon, Activity } from "lucide-react";
+
 import { TimeTravelReplay } from "./TimeTravelReplay";
 
 interface CaseDetailsProps {
@@ -71,7 +71,7 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
   if (loading || !data) {
     return (
       <div className="h-full w-full flex items-center justify-center text-slate-500 font-mono">
-        <Activity className="animate-spin mr-2" /> Loading case ledger...
+        <span className="animate-pulse mr-2">[~]</span> Loading case ledger...
       </div>
     );
   }
@@ -106,21 +106,21 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
         <div className="absolute top-6 bottom-6 left-10 w-0.5 bg-slate-800"></div>
         <div className="flex flex-col gap-8 relative z-10">
           <div className="flex gap-4">
-            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)]"><Activity className="w-4 h-4" /></div>
+            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)] font-mono text-xs font-bold">&gt;</div>
             <div className="pt-1">
               <h4 className="font-mono text-sm text-slate-400">FAST SCREEN</h4>
               <p className="text-slate-200 mt-1">Transaction isolated from ledger stream.</p>
             </div>
           </div>
           <div className="flex gap-4">
-            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)]"><Activity className="w-4 h-4" /></div>
+            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)] font-mono text-xs font-bold">&gt;</div>
             <div className="pt-1">
               <h4 className="font-mono text-sm text-slate-400">SIMILAR CASES</h4>
               <p className="text-slate-200 mt-1">Found {data.network?.nodes?.length - 3 || 0} historical links via pgvector.</p>
             </div>
           </div>
           <div className="flex gap-4">
-            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)]"><Activity className="w-4 h-4" /></div>
+            <div className="w-8 h-8 rounded-full bg-slate-900 border-2 border-brand-blue flex items-center justify-center text-brand-blue z-10 shadow-[0_0_10px_rgba(30,136,229,0.5)] font-mono text-xs font-bold">&gt;</div>
             <div className="pt-1 flex-1">
               <h4 className="font-mono text-sm text-slate-400">LLM REASONING</h4>
               <div className="mt-2 bg-slate-950 border border-slate-800 p-4 rounded text-sm text-slate-300 font-mono leading-relaxed">
@@ -224,10 +224,10 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
               data: {
                 ...n.data,
                 label: n.data.fullText ? (
-                  <div title={n.data.fullText} className="cursor-help whitespace-pre-wrap break-words w-full text-xs leading-snug text-center">
-                    {n.data.label}
+                  <div title={n.data.fullText as string} className="cursor-help whitespace-pre-wrap break-words w-full text-xs leading-snug text-center">
+                    {n.data.label as React.ReactNode}
                   </div>
-                ) : n.data.label
+                ) : n.data.label as React.ReactNode
               }
             }))}
             edges={edges}
@@ -255,13 +255,13 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
         
         <div className="flex gap-3">
           <button onClick={() => handleDecision("APPROVE")} disabled={processing} className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold font-mono rounded flex items-center gap-2 transition-colors border border-slate-700">
-            <ShieldCheck className="w-4 h-4 text-emerald-500" /> [A] APPROVE
+            [A] APPROVE
           </button>
           <button onClick={() => handleDecision("DENY")} disabled={processing} className="px-6 py-2 bg-brand-red/20 hover:bg-brand-red/30 text-brand-red text-sm font-bold font-mono rounded flex items-center gap-2 transition-colors border border-brand-red/50">
-            <ShieldAlert className="w-4 h-4" /> [R] REJECT
+            [R] REJECT
           </button>
           <button onClick={() => handleDecision("ESCALATE")} disabled={processing} className="px-6 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 text-sm font-bold font-mono rounded flex items-center gap-2 transition-colors border border-amber-500/50">
-            <AlertOctagon className="w-4 h-4" /> [E] ESCALATE
+            [E] ESCALATE
           </button>
         </div>
       </div>
@@ -269,7 +269,7 @@ export function CaseDetails({ caseId, onProcessed }: CaseDetailsProps) {
       {processing && (
         <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="text-brand-blue font-mono text-lg flex items-center gap-3">
-            <Activity className="animate-spin" /> EXECUTING COMMAND(RESUME)...
+            <span className="animate-pulse">[~]</span> EXECUTING COMMAND(RESUME)...
           </div>
         </div>
       )}

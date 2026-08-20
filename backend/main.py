@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks
 from typing import List, Dict, Any
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -132,8 +132,42 @@ async def handle_interrupt_webhook(payload: WebhookPayload):
 def health_check():
     return {"status": "healthy", "service": "backend"}
 
+def background_anomaly_sweep(transactions: list):
+    import psycopg
+    from langgraph.checkpoint.postgres import PostgresSaver
+    from agents.graph import build_investigation_graph
+    
+    db_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/finsentinel")
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        cp = PostgresSaver(conn)
+        cp.setup()
+        workflow = build_investigation_graph()
+        app = workflow.compile(checkpointer=cp)
+        
+        for txn in transactions:
+            thread_id = f"sweep_{txn['id']}_{uuid.uuid4().hex[:4]}"
+            config = {"configurable": {"thread_id": thread_id}}
+            
+            initial_state = {
+                "transaction": {
+                    "transaction_id": txn["id"],
+                    "account_id": txn.get("account_id", "ACC-UNKNOWN"),
+                    "amount": float(txn.get("amount", 0.0)) if pd.notna(txn.get("amount")) else 0.0,
+                    "merchant_category": txn.get("merchant_category", "Unknown"),
+                    "merchant_id": txn.get("merchant_id", "M-UNKNOWN"),
+                    "timestamp": str(txn.get("timestamp", "2026-01-01T00:00:00")),
+                    "device_id": txn.get("device_id", "DEV-UNKNOWN"),
+                    "geo": txn.get("geo", "US-NY")
+                }
+            }
+            
+            try:
+                list(app.stream(initial_state, config))
+            except Exception as e:
+                print(f"Background graph exception for {txn['id']}: {e}")
+
 @app.post("/upload-transactions")
-async def upload_transactions(file: UploadFile = File(...)):
+async def upload_transactions(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     if not file.filename.endswith(('.csv', '.xlsx')):
         raise HTTPException(status_code=400, detail="Only CSV and XLSX files are supported.")
     
@@ -163,11 +197,11 @@ async def upload_transactions(file: UploadFile = File(...)):
         db_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/finsentinel")
         engine = create_engine(db_url)
         
-        # We only insert columns that exist in the DB.
-        # SQLAlchemy and pandas to_sql will handle this, but let's be safe.
-        # In a real app we'd map columns explicitly.
-        
         cleaned_df.to_sql('transactions', engine, if_exists='append', index=False)
+        
+        # Trigger the asynchronous anomaly sweep via LangGraph
+        transactions_dict = cleaned_df.to_dict('records')
+        background_tasks.add_task(background_anomaly_sweep, transactions_dict)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during ingestion: {str(e)}")
@@ -490,7 +524,13 @@ from services.credit_triage import (
     ApplicantProfile,
     MacroIndicators,
     RiskFactorSummary,
+    StressScenarioInput,
+    StressScenarioOutput,
+    MemoRequest,
+    UnderwriterCreditMemo,
     evaluate_credit_risk,
+    calculate_stress_scenario,
+    generate_credit_memo,
     get_macro_benchmarks,
     get_preset_applicants
 )
@@ -509,7 +549,8 @@ def get_credit_presets():
 def post_credit_triage(applicant: ApplicantProfile):
     """
     Evaluates applicant financial metrics, calculates DTI and revolving utilization,
-    cross-references against macroeconomic benchmarks, and surfaces risk factors.
+    cross-references against macroeconomic benchmarks, surfaces risk factors,
+    generates stress sensitivity scenarios, and extracts FCRA adverse action codes.
     
     GUARANTEE (Constitution Rule #6):
     The returned RiskFactorSummary contains NO autonomous approve/deny decisions.
@@ -519,4 +560,66 @@ def post_credit_triage(applicant: ApplicantProfile):
         return summary
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Credit triage calculation failed: {str(e)}")
+
+class CustomStressRequest(BaseModel):
+    applicant: ApplicantProfile
+    scenario: StressScenarioInput
+
+@app.post("/credit/stress-test", response_model=StressScenarioOutput)
+def post_custom_stress_test(payload: CustomStressRequest):
+    """Calculates borrower DTI and liquidity resilience under custom macro shock parameters."""
+    try:
+        return calculate_stress_scenario(payload.applicant, payload.scenario)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stress scenario calculation failed: {str(e)}")
+
+@app.post("/credit/export-memo", response_model=UnderwriterCreditMemo)
+def post_export_memo(payload: MemoRequest):
+    """
+    Generates a structured institutional credit memorandum with verified ratios,
+    macro stress matrix, FCRA factors, and human underwriter notes with SHA-256 audit reference.
+    """
+    try:
+        summary = evaluate_credit_risk(payload.applicant)
+        memo = generate_credit_memo(
+            applicant=payload.applicant,
+            summary=summary,
+            underwriter_name=payload.underwriter_name,
+            underwriter_notes=payload.underwriter_notes,
+            checklist_verifications=payload.checklist_verifications
+        )
+        return memo
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Credit memo generation failed: {str(e)}")
+
+from services.cost_service import (
+    CostMetricsSummary,
+    ScaleSimulationInput,
+    ScaleSimulationOutput,
+    get_cost_efficiency_metrics,
+    simulate_scale_roi
+)
+
+@app.get("/metrics/cost-efficiency", response_model=CostMetricsSummary)
+def get_cost_metrics():
+    """
+    Returns unit economics telemetry, $/1,000 transactions scored,
+    fast-path deflection rate vs LLM escalation rate, and cumulative cost savings.
+    """
+    try:
+        return get_cost_efficiency_metrics()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cost metrics calculation failed: {str(e)}")
+
+@app.post("/metrics/cost-simulate", response_model=ScaleSimulationOutput)
+def post_simulate_scale(payload: ScaleSimulationInput):
+    """
+    Calculates projected monthly and annual cloud/LLM spend savings
+    under custom volume and deflection scaling parameters.
+    """
+    try:
+        return simulate_scale_roi(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scale simulation failed: {str(e)}")
+
 

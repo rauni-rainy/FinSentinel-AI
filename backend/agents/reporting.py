@@ -89,11 +89,29 @@ def generate_executive_report(session_id: str) -> bytes:
         dynamic_actions.append("Audit all transactions near the $10k reporting threshold for potential smurfing.")
     if any("Unknown" in k for k in typology_counts.keys()) or not dynamic_actions:
         dynamic_actions.append("Review manual queue cases in the attached spreadsheet.")
-        
+
+    # Pull natural-language answers from variance query audit logs.
+    # Use result["final_answer"] — NOT var.response, which on pre-flight
+    # entries is None or a raw system prompt, causing SQL JSON to bleed
+    # into the slide.
     for var in variances:
-        dynamic_actions.append(var.response)
-        
-    pptx_data["actions"] = dynamic_actions
+        answer = None
+        if var.result and isinstance(var.result, dict):
+            answer = var.result.get("final_answer")
+        # Fallback: if old log stored the answer in response field and it's
+        # not a JSON blob or empty, use it.
+        if not answer and var.response:
+            candidate = var.response.strip()
+            if candidate and not candidate.startswith("{") and not candidate.startswith("[") and len(candidate) > 20:
+                answer = candidate
+        if answer:
+            # Truncate very long LLM answers to a single clean sentence for the slide.
+            first_sentence = answer.split(".")[0].strip()
+            if len(first_sentence) > 10:
+                dynamic_actions.append(first_sentence + ".")
+
+    # Cap at 6 bullets so they fit inside the slide textbox without overflow.
+    pptx_data["actions"] = dynamic_actions[:6]
     
     # Fetch Red Team Benchmark
     import glob

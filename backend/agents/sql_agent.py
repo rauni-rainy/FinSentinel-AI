@@ -4,10 +4,11 @@ import logging
 import operator
 from typing import TypedDict, Annotated, List, Dict, Any
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+from agents.audit import log_audit
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
 db_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/finsentinel")
@@ -27,7 +28,8 @@ def parse_intent(state: SQLState):
     return {"is_variance_drilldown": is_variance, "sql_history": [], "results_history": []}
 
 def generate_query(state: SQLState):
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    model_name = os.getenv("OLLAMA_MODEL", "phi4-mini")
+    llm = ChatOllama(model=model_name, format="json", temperature=0)
     
     schema_context = """
     Table: operating_expenses
@@ -61,6 +63,18 @@ def generate_query(state: SQLState):
     if state["results_history"] and state["is_variance_drilldown"]:
         sys_prompt += f"\n\nYou already ran a query and got these results: {state['results_history'][-1]}.\nNow write a follow-up query to drill down into the root cause of the variance (e.g., group by vendor or category)."
     
+    # CONSTITUTION RULE #4: Audit the LLM call BEFORE its result is used
+    log_audit(
+        execution_id=f"sql-gen-{state['question'][:48]}",
+        node_name="sql_agent_generate",
+        action_type="llm_invoke_generate_query",
+        record_type="sql_query",
+        payload={"question": state["question"], "is_variance_drilldown": state["is_variance_drilldown"]},
+        result={},  # pre-flight entry
+        prompt=sys_prompt,
+        session_id="session-sql",
+    )
+
     response = llm.invoke([SystemMessage(content=sys_prompt)])
     
     try:
@@ -109,7 +123,8 @@ def format_answer(state: SQLState):
     if "final_answer" in state and state["final_answer"]:
         return {}
         
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    model_name = os.getenv("OLLAMA_MODEL", "phi4-mini")
+    llm = ChatOllama(model=model_name, temperature=0)
     import decimal
     def custom_encoder(obj):
         if isinstance(obj, decimal.Decimal):
@@ -124,23 +139,35 @@ def format_answer(state: SQLState):
     Results: {json.dumps(state['results_history'], default=custom_encoder)}
     """
     
-    response = llm.invoke([SystemMessage(content=sys_prompt)])
-    final_ans = response.content
-    
-    # Log to audit_log
-    from agents.audit import log_audit
+    # CONSTITUTION RULE #4: Audit the LLM call BEFORE its result is used
     log_audit(
         execution_id="variance-query",
         node_name="sql_agent",
-        action_type="variance_analysis",
-        payload={"sql_history": state["sql_history"]},
-        result={"final_answer": final_ans},
-        prompt=state["question"],
-        response=final_ans,
-        session_id="session-variance", # Can be made dynamic
-        record_type="variance_query"
+        action_type="llm_invoke_format_answer",
+        record_type="variance_query",
+        payload={"sql_history": state["sql_history"], "question": state["question"]},
+        result={},  # pre-flight entry
+        prompt=sys_prompt,
+        session_id="session-variance",
     )
-    
+
+    response = llm.invoke([SystemMessage(content=sys_prompt)])
+    final_ans = response.content
+
+    # Post-completion log: stores the natural-language answer in result["final_answer"]
+    # so reporting.py can pull it cleanly without touching var.response.
+    log_audit(
+        execution_id="variance-query",
+        node_name="sql_agent",
+        action_type="variance_analysis_complete",
+        record_type="variance_query",
+        payload={"sql_history": state["sql_history"], "question": state["question"]},
+        result={"final_answer": final_ans},
+        prompt=sys_prompt,
+        response=final_ans,
+        session_id="session-variance",
+    )
+
     return {"final_answer": final_ans}
 
 def build_sql_graph():

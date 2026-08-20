@@ -1,0 +1,7 @@
+"Invoice_Num","Account_Code","Payment_Date","Total (USD)","Supplier_Entity","Commodity_Group","IP_Address","Origin_Region"
+INV-MA-001,ACC-MERGER-881,2026-08-10 08:00:00,"$1,200.00","Slack Technologies LLC","Software Subscriptions",192.168.1.10,US-CA
+INV-MA-002,ACC-MERGER-881,2026-08-11 11:30:00,"$3,400.50","Salesforce.com Inc","CRM Software",192.168.1.10,US-CA
+INV-MA-003,ACC-MERGER-881,2026-08-12 15:45:00,"$2,450,000.00","Vortex Synergy Capital LLC","IT Strategic Advisory",10.0.0.99,KY-CAYMAN
+INV-MA-004,ACC-MERGER-882,2026-08-13 09:20:00,"$450.00","Delta Airlines Corporate","Travel & Lodging",192.168.1.14,US-GA
+INV-MA-005,ACC-MERGER-882,2026-08-14 13:10:00,"$780.25","Marriott International","Travel & Lodging",192.168.1.14,US-MD
+INV-MA-006,ACC-MERGER-883,2026-08-15 17:00:00,"$62.00","Zoom Video Communications","Software Subscriptions",192.168.1.20,US-CA

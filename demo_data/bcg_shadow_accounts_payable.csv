@@ -1,0 +1,11 @@
+"Txn ID","Client Account Ref","Date of Settlement","Txn Amt ($)","Vendor Name","Category/Sector","Source Terminal","Geo / Country"
+TXN-AP-9001,ACC-CORP-4401,2026-08-15 09:15:22,"$4,500.00","Microsoft Azure Enterprise","Cloud Infrastructure",DEV-CORP-01,US-WA
+TXN-AP-9002,ACC-CORP-4401,08/15/2026,"$12,350.50","Amazon Web Services Inc","Cloud Infrastructure",DEV-CORP-01,US-VA
+TXN-AP-9003,ACC-CORP-4401,2026.08.16,"$95.00","Uber Corporate Travel","Transport",DEV-MOBILE-88,US-NY
+TXN-AP-9004,ACC-CORP-4401,2026-08-16 14:20:00,"$1,450,000.00","Apex Horizon Global Ltd","Offshore Advisory Services",DEV-UNVERIFIED-99,CH-GENEVA
+TXN-AP-9005,ACC-CORP-4402,2026-08-17 10:05:00,"$9,950.00","QuickCash Settlement Corp","Intermediary Clearing",DEV-PROXY-101,PA-PANAMA
+TXN-AP-9006,ACC-CORP-4402,2026-08-17 10:18:00,"$9,800.00","QuickCash Settlement Corp","Intermediary Clearing",DEV-PROXY-101,PA-PANAMA
+TXN-AP-9007,ACC-CORP-4402,2026-08-17 10:32:00,"$9,900.00","QuickCash Settlement Corp","Intermediary Clearing",DEV-PROXY-101,PA-PANAMA
+TXN-AP-9008,ACC-CORP-4403,2026-08-18 11:45:00,"$320.00","FedEx Express Overnight","Logistics",DEV-DESK-12,US-IL
+TXN-AP-9009,ACC-CORP-4403,2026-08-18 16:00:00,"$840.50","Deloitte Tax & Audit","Professional Services",DEV-DESK-12,US-NY
+TXN-AP-9010,ACC-CORP-4403,2026-08-19 08:30:00,"$15.75","Starbucks Corporate Catering","Meals & Entertainment",DEV-MOBILE-23,US-CA

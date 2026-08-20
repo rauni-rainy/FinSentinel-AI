@@ -130,18 +130,42 @@ async function generate() {
         s4.addText("No Red Team simulation artifact found. Run the simulation to populate benchmark data.", { x: 0.5, y: 2.0, w: 9.0, h: 1.0, fontSize: 20, color: "666666", align: "center" });
     }
 
-    // SLIDE 5: Recommended Actions
-    const s5 = pres.addSlide();
-    s5.background = { color: COLOR_BG };
-    s5.addText("Recommended Actions", { x: 0.5, y: 0.5, w: "90%", h: 0.5, fontSize: 32, bold: true, color: COLOR_GREEN });
-    
-    s5.addShape(pres.ShapeType.rect, { x: 0.5, y: 1.5, w: 9.0, h: 3.0, fill: { color: COLOR_WHITE }, shadow: { type: "outer", blur: 3, opacity: 0.15 } });
-    
-    if (data.actions && data.actions.length > 0) {
-        const actionBullets = data.actions.map(act => ({ text: act, options: { bullet: true, fontSize: 20, color: "333333", breakLine: true } }));
-        s5.addText(actionBullets, { x: 1.0, y: 1.8, w: 8.0, h: 2.5, valign: "top" });
-    } else {
-        s5.addText("Review the flagged manual cases in the attached spreadsheet.", { x: 1.0, y: 2.0, w: 8.0, h: 1.0, fontSize: 20, color: "333333", align: "center" });
+    // SLIDE 5+: Recommended Actions (paginated to avoid overflow)
+    const ACTIONS_PER_SLIDE = 4;
+    const actions = (data.actions && data.actions.length > 0)
+        ? data.actions
+        : ["Review the flagged manual cases in the attached spreadsheet."];
+
+    for (let ai = 0; ai < actions.length; ai += ACTIONS_PER_SLIDE) {
+        const chunk = actions.slice(ai, ai + ACTIONS_PER_SLIDE);
+        const pageNum = Math.floor(ai / ACTIONS_PER_SLIDE) + 1;
+        const totalPages = Math.ceil(actions.length / ACTIONS_PER_SLIDE);
+
+        const s5 = pres.addSlide();
+        s5.background = { color: COLOR_BG };
+
+        const titleSuffix = totalPages > 1 ? ` (${pageNum}/${totalPages})` : "";
+        s5.addText(`Recommended Actions${titleSuffix}`, {
+            x: 0.5, y: 0.3, w: "90%", h: 0.6,
+            fontSize: 32, bold: true, color: COLOR_GREEN
+        });
+
+        // Background card — tall enough to hold 4 bullets at 16pt comfortably
+        s5.addShape(pres.ShapeType.rect, {
+            x: 0.5, y: 1.2, w: 9.0, h: 4.5,
+            fill: { color: COLOR_WHITE },
+            shadow: { type: "outer", blur: 3, opacity: 0.15 }
+        });
+
+        const actionBullets = chunk.map(act => ({
+            text: String(act),
+            options: { bullet: true, fontSize: 16, color: "333333", breakLine: true, paraSpaceAfter: 6 }
+        }));
+
+        s5.addText(actionBullets, {
+            x: 0.8, y: 1.4, w: 8.4, h: 4.1,
+            valign: "top"
+        });
     }
 
     // Export

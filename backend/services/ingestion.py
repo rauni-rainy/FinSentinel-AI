@@ -4,49 +4,71 @@ import uuid
 
 def clean_transaction_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Cleans transaction data using DuckDB in-memory engine.
-    - Infers and cleans types.
-    - Handles inconsistent date formats (parses to standard datetime).
-    - Removes currency symbols (e.g. $, €) and commas from amounts.
-    - Removes duplicate rows based on all columns.
+    Cleans messy consulting/client transaction data using DuckDB in-memory engine.
+    - Fuzzy matches chaotic client headers to strict PostgreSQL schema.
+    - Robustly casts types, stripping currency symbols, commas, and whitespace.
+    - Handles missing/NaN values by assigning default institutional placeholders.
     """
     
+    # 1. Fuzzy Column Mapping
+    schema_map = {
+        'account_id': ['account_id', 'client account', 'acct num', 'account', 'acc_id'],
+        'timestamp': ['timestamp', 'date', 'date of settlement', 'time', 'txn date', 'settlement_date'],
+        'amount': ['amount', 'txn amt ($)', 'price', 'payment', 'total', 'transaction_value'],
+        'merchant_category': ['merchant_category', 'category', 'industry', 'mcc', 'vendor_type'],
+        'merchant_id': ['merchant_id', 'vendor', 'merchant', 'supplier', 'payee', 'client name'],
+        'device_id': ['device_id', 'device', 'ip', 'terminal', 'source_ip'],
+        'geo': ['geo', 'region', 'country', 'location', 'geo_location']
+    }
+    
+    # Standardize headers in pandas first
+    new_columns = {}
+    for col in df.columns:
+        clean_col = str(col).lower().strip()
+        matched = False
+        for standard_col, aliases in schema_map.items():
+            if any(alias in clean_col for alias in aliases):
+                new_columns[col] = standard_col
+                matched = True
+                break
+        if not matched:
+            new_columns[col] = clean_col # keep as is if no match
+            
+    df = df.rename(columns=new_columns)
+    
+    # Ensure all strict schema columns exist (Fill missing)
+    strict_schema = ['account_id', 'timestamp', 'amount', 'merchant_category', 'merchant_id', 'device_id', 'geo']
+    for col in strict_schema:
+        if col not in df.columns:
+            if col == 'amount':
+                df[col] = 0.0
+            elif col == 'timestamp':
+                df[col] = "2026-01-01 00:00:00"
+            else:
+                df[col] = f"{col.upper()}_UNKNOWN"
+
     # Register the dataframe as a virtual table in DuckDB
     con = duckdb.connect(database=':memory:')
     con.register('raw_transactions', df)
     
-    # To handle various date formats gracefully, we can use DuckDB's TRY_CAST or strptime
-    # But since date formats can vary wildly in CSVs, a regex or string manipulation might be needed
-    # We will cast amounts by stripping out common non-numeric chars like $, €, ,
-    
-    # We'll dynamically get column names. If there's an 'amount' or 'timestamp' column, we target them.
-    # Otherwise, we'll try to guess based on standard names.
-    # Assuming the input has 'amount' and 'timestamp' or similar columns.
-    
-    columns = con.execute("DESCRIBE raw_transactions").fetchall()
-    col_names = [c[0] for c in columns]
-    
-    # Build select query dynamically
-    select_exprs = []
-    
-    for col in col_names:
-        lower_col = col.lower()
-        if 'amount' in lower_col or 'price' in lower_col or 'balance' in lower_col:
-            expr = f"CAST(REGEXP_REPLACE(CAST(\"{col}\" AS VARCHAR), '[^0-9\\.-]', '', 'g') AS DOUBLE) AS \"{col}\""
-            select_exprs.append(expr)
-        elif 'date' in lower_col or 'time' in lower_col:
-            # DuckDB TRY_CAST to timestamp. If it fails, it returns NULL.
-            # We first try to cast directly. 
-            expr = f"TRY_CAST(\"{col}\" AS TIMESTAMP) AS \"{col}\""
-            select_exprs.append(expr)
-        else:
-            select_exprs.append(f"\"{col}\"")
-            
-    select_clause = ", ".join(select_exprs)
-    
-    # Query to clean and deduplicate
+    # Build select query to aggressively clean the data in-memory
     query = f"""
-        SELECT DISTINCT {select_clause}
+        SELECT DISTINCT 
+            COALESCE(CAST(account_id AS VARCHAR), 'ACC_UNKNOWN') AS account_id,
+            
+            -- Attempt to cast timestamp, fallback to 2026-01-01
+            COALESCE(TRY_CAST(timestamp AS TIMESTAMP), CAST('2026-01-01 00:00:00' AS TIMESTAMP)) AS timestamp,
+            
+            -- Strip out all non-numeric chars (except dot and minus) from amount
+            COALESCE(
+                TRY_CAST(REGEXP_REPLACE(CAST(amount AS VARCHAR), '[^0-9\\.-]', '', 'g') AS DOUBLE), 
+                0.0
+            ) AS amount,
+            
+            COALESCE(CAST(merchant_category AS VARCHAR), 'CATEGORY_UNKNOWN') AS merchant_category,
+            COALESCE(CAST(merchant_id AS VARCHAR), 'VENDOR_UNKNOWN') AS merchant_id,
+            COALESCE(CAST(device_id AS VARCHAR), 'DEV_UNKNOWN') AS device_id,
+            COALESCE(CAST(geo AS VARCHAR), 'GEO_UNKNOWN') AS geo
         FROM raw_transactions
     """
     
